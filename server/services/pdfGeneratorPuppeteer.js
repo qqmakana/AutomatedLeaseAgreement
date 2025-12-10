@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+const fs = require('fs');
 
 /**
  * Generate PDF lease document using Puppeteer (HTML/CSS rendering)
@@ -13,7 +14,8 @@ async function generateLeasePDF(leaseData) {
     console.log('Platform:', process.platform);
     console.log('Puppeteer executable:', process.env.PUPPETEER_EXECUTABLE_PATH || 'default');
     
-    // Puppeteer configuration for both development and production (Render)
+    // Puppeteer configuration - adjust for environment
+    const isProduction = process.env.NODE_ENV === 'production';
     const puppeteerArgs = [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -21,19 +23,48 @@ async function generateLeasePDF(leaseData) {
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--single-process', // Required for Render's limited resources
       '--disable-gpu',
       '--font-render-hinting=none', // Critical for consistent rendering
       '--force-color-profile=srgb',
       '--disable-font-subpixel-positioning' // Prevents spacing variations
     ];
+    
+    // Add --single-process only in production (Render) - can cause issues locally
+    if (isProduction) {
+      puppeteerArgs.push('--single-process');
+    }
 
-    browser = await puppeteer.launch({
-      headless: 'new', // Use new headless mode for better consistency
-      args: puppeteerArgs,
-      // Use system Chrome if available (Render)
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
-    });
+    // Determine Chromium path:
+    // - In production (Render Docker): Use system Chromium (/usr/bin/chromium) installed via Dockerfile
+    // - In development: Use Puppeteer's bundled Chromium
+    let chromiumPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    
+    // Auto-detect system Chromium in production if not explicitly set
+    if (!chromiumPath && isProduction) {
+      const systemChromiumPaths = ['/usr/bin/chromium', '/usr/bin/chromium-browser'];
+      for (const path of systemChromiumPaths) {
+        if (fs.existsSync(path)) {
+          chromiumPath = path;
+          console.log(`✅ Using system Chromium: ${path}`);
+          break;
+        }
+      }
+    }
+    
+    const launchOptions = {
+      headless: 'new',
+      args: puppeteerArgs
+    };
+    
+    // Use system Chromium if available (production), otherwise use bundled (development)
+    if (chromiumPath) {
+      launchOptions.executablePath = chromiumPath;
+      console.log(`🔧 Puppeteer executable: ${chromiumPath}`);
+    } else {
+      console.log('🔧 Puppeteer executable: bundled Chromium');
+    }
+    
+    browser = await puppeteer.launch(launchOptions);
 
     const page = await browser.newPage();
     
@@ -55,31 +86,76 @@ async function generateLeasePDF(leaseData) {
         timeout: 30000
     });
     
-    // DEBUGGING: Check fonts
+    // DEBUGGING: Comprehensive font and layout verification
     const fontDebug = await page.evaluate(() => {
-        const testFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Roboto', 'Courier', 'Liberation Sans', 'DejaVu Sans'];
-        const available = testFonts.filter(font => 
-            document.fonts.check(`12px "${font}"`)
-        );
+        // Test multiple font names (Liberation Sans has variations)
+        const testFonts = [
+            'Liberation Sans',
+            'LiberationSans',
+            'Liberation Sans Regular',
+            'Arial',
+            'Helvetica',
+            'DejaVu Sans',
+            'Roboto',
+            'Times New Roman'
+        ];
         
-        // Check what font is actually being used
-        const testDiv = document.createElement('div');
-        testDiv.style.fontFamily = 'Liberation Sans, Arial, Helvetica, sans-serif';
-        testDiv.textContent = 'Test';
-        document.body.appendChild(testDiv);
-        const computedFont = window.getComputedStyle(testDiv).fontFamily;
-        document.body.removeChild(testDiv);
+        const available = [];
+        testFonts.forEach(font => {
+            if (document.fonts.check(`12px "${font}"`)) {
+                available.push(font);
+            }
+        });
         
-        return {
-            availableFonts: available,
-            actualFont: computedFont,
-            defaultFont: window.getComputedStyle(document.body).fontFamily
-        };
+        // Check what font is actually being used on body
+        const bodyElement = document.body;
+        const bodyComputed = window.getComputedStyle(bodyElement);
+        const bodyFontFamily = bodyComputed.fontFamily;
+        
+        // Check what font is actually being used on a field element
+        const testField = document.querySelector('.field');
+        let fieldFontFamily = 'N/A';
+        let fieldMetrics = null;
+        
+        if (testField) {
+            const fieldComputed = window.getComputedStyle(testField);
+            fieldFontFamily = fieldComputed.fontFamily;
+            fieldMetrics = {
+                fontSize: fieldComputed.fontSize,
+                lineHeight: fieldComputed.lineHeight,
+                height: fieldComputed.height,
+                marginBottom: fieldComputed.marginBottom,
+                paddingTop: fieldComputed.paddingTop,
+                paddingBottom: fieldComputed.paddingBottom
+            };
+        }
+        
+        // Verify Liberation Sans is available via font loading API
+        return new Promise((resolve) => {
+            document.fonts.ready.then(() => {
+                const liberationAvailable = document.fonts.check('12px "Liberation Sans"') ||
+                                           document.fonts.check('12px Liberation Sans') ||
+                                           available.some(f => f.toLowerCase().includes('liberation'));
+                
+                resolve({
+                    availableFonts: available,
+                    liberationSansAvailable: liberationAvailable,
+                    bodyFontFamily: bodyFontFamily,
+                    fieldFontFamily: fieldFontFamily,
+                    fieldMetrics: fieldMetrics,
+                    totalFontsLoaded: document.fonts.size
+                });
+            });
+        });
     });
     
+    console.log('=== FONT VERIFICATION ===');
     console.log('🔍 Available fonts:', fontDebug.availableFonts);
-    console.log('🔍 Actual font in use:', fontDebug.actualFont);
-    console.log('🔍 Default body font:', fontDebug.defaultFont);
+    console.log('🔍 Liberation Sans available:', fontDebug.liberationSansAvailable);
+    console.log('🔍 Body font family:', fontDebug.bodyFontFamily);
+    console.log('🔍 Field font family:', fontDebug.fieldFontFamily);
+    console.log('🔍 Field metrics:', JSON.stringify(fontDebug.fieldMetrics, null, 2));
+    console.log('🔍 Total fonts loaded:', fontDebug.totalFontsLoaded);
     
     // DEBUGGING: Check computed spacing
     const spacingDebug = await page.evaluate(() => {
@@ -226,13 +302,14 @@ function generateLeaseHTML(data) {
         }
         
         body {
-            font-family: 'Liberation Sans', 'Arial', 'Helvetica', sans-serif;
+            font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
             background: #f5f5f5;
             padding: 20px;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             text-rendering: optimizeLegibility;
             line-height: 1.2;
+            font-size: 10px;
         }
         
         .page {
@@ -297,6 +374,7 @@ function generateLeaseHTML(data) {
             height: 12px !important;
             overflow: hidden;
             font-size: 10px;
+            font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
         }
         
         .label {
@@ -309,6 +387,7 @@ function generateLeaseHTML(data) {
             padding: 0 !important;
             vertical-align: top;
             line-height: 12px !important;
+            font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
         }
         
         .value {
@@ -318,6 +397,7 @@ function generateLeaseHTML(data) {
             padding: 0 !important;
             vertical-align: top;
             line-height: 12px !important;
+            font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
         }
         
         .subsection {

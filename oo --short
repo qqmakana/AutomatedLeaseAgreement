@@ -1,0 +1,55 @@
+[1mdiff --git a/render.yaml b/render.yaml[m
+[1mindex 6d7aadc..97ee739 100644[m
+[1m--- a/render.yaml[m
+[1m+++ b/render.yaml[m
+[36m@@ -1,25 +1,25 @@[m
+[31m-services:[m
+[31m-  # Backend API Service[m
+[31m-  - type: web[m
+[31m-    name: lease-backend[m
+[31m-    env: docker[m
+[31m-    plan: free[m
+[31m-    dockerfilePath: server/Dockerfile[m
+[31m-    dockerContext: server[m
+[31m-    envVars:[m
+[31m-      - key: PORT[m
+[31m-        value: 5000[m
+[31m-      - key: NODE_ENV[m
+[31m-        value: production[m
+[31m-[m
+[31m-  # Frontend Static Site[m
+[31m-  - type: static[m
+[31m-    name: lease-frontend[m
+[31m-    buildCommand: npm install && npm run build[m
+[31m-    publishPath: build[m
+[31m-    envVars:[m
+[31m-      - key: REACT_APP_API_URL[m
+[31m-        # This will be updated after backend deploys[m
+[31m-        # Format: https://lease-backend.onrender.com/api[m
+[31m-        value: https://lease-backend.onrender.com/api[m
+[31m-[m
+[32m+[m[32mservices:[m
+[32m+[m[32m  # Backend API Service[m
+[32m+[m[32m  - type: web[m
+[32m+[m[32m    name: lease-backend[m
+[32m+[m[32m    env: docker[m
+[32m+[m[32m    plan: free[m
+[32m+[m[32m    dockerfilePath: server/Dockerfile[m
+[32m+[m[32m    dockerContext: server[m
+[32m+[m[32m    envVars:[m
+[32m+[m[32m      - key: PORT[m
+[32m+[m[32m        value: 5000[m
+[32m+[m[32m      - key: NODE_ENV[m
+[32m+[m[32m        value: production[m
+[32m+[m
+[32m+[m[32m  # Frontend Static Site[m
+[32m+[m[32m  - type: static[m
+[32m+[m[32m    name: lease-frontend[m
+[32m+[m[32m    buildCommand: npm install && npm run build[m
+[32m+[m[32m    publishPath: build[m
+[32m+[m[32m    envVars:[m
+[32m+[m[32m      - key: REACT_APP_API_URL[m
+[32m+[m[32m        # This will be updated after backend deploys[m
+[32m+[m[32m        # Format: https://lease-backend.onrender.com/api[m
+[32m+[m[32m        value: https://lease-backend.onrender.com/api[m
+[32m+[m

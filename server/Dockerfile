@@ -1,5 +1,6 @@
 # Server Dockerfile with Puppeteer for PDF generation
-FROM node:18-slim
+# Using Node 20 for better compatibility with Render
+FROM node:20-slim
 
 # Install dependencies for Puppeteer + fonts (critical for consistent rendering)
 RUN apt-get update && apt-get install -y \
@@ -8,12 +9,17 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     # CRITICAL: Install fonts (Liberation Sans is Arial-compatible)
     fonts-liberation \
+    fonts-liberation2 \
     fonts-roboto \
     fonts-noto-core \
+    fonts-noto-cjk \
     fonts-dejavu-core \
+    fonts-dejavu-extra \
     fonts-freefont-ttf \
     fontconfig \
-    # Chromium dependencies
+    # Chromium and dependencies
+    chromium \
+    chromium-sandbox \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
@@ -50,6 +56,10 @@ RUN apt-get update && apt-get install -y \
     && fc-cache -f -v \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Verify fonts are installed
+RUN fc-list | grep -i liberation || echo "WARNING: Liberation fonts not found"
+RUN fc-list | grep -i dejavu || echo "WARNING: DejaVu fonts not found"
 
 WORKDIR /app
 
