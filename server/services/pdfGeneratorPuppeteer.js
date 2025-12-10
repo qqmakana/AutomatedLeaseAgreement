@@ -7,14 +7,24 @@ const puppeteer = require('puppeteer');
 async function generateLeasePDF(leaseData) {
   let browser;
   try {
+    // Puppeteer configuration for both development and production (Render)
+    const puppeteerArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process', // Required for Render's limited resources
+      '--disable-gpu',
+      '--font-render-hinting=none'
+    ];
+
     browser = await puppeteer.launch({
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--font-render-hinting=none'
-      ]
+      args: puppeteerArgs,
+      // Use system Chrome if available (Render)
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
     });
 
     const page = await browser.newPage();
@@ -137,7 +147,7 @@ function generateLeaseHTML(data) {
             max-width: 850px;
             margin: 0 auto;
             background: white;
-            padding: 40px 50px;
+            padding: 30px 50px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         
@@ -160,29 +170,29 @@ function generateLeaseHTML(data) {
             text-align: center;
             font-size: 16px;
             font-weight: bold;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
         }
         
         .intro {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 15px;
             font-size: 11px;
             line-height: 1.6;
         }
         
         .section {
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             font-size: 10px;
         }
         
         .section-title {
             font-weight: bold;
-            margin-bottom: 8px;
+            margin-bottom: 5px;
             font-size: 10px;
         }
         
         .field {
-            margin-bottom: 5px;
+            margin-bottom: 3px;
             display: flex;
             align-items: baseline;
         }
@@ -203,19 +213,19 @@ function generateLeaseHTML(data) {
         
         .subsection {
             margin-left: 0px;
-            margin-bottom: 8px;
+            margin-bottom: 5px;
         }
         
         table {
             width: 100%;
             border-collapse: collapse;
-            margin: 15px 0;
+            margin: 8px 0;
             font-size: 9px;
         }
         
         th, td {
             border: 1px solid #000;
-            padding: 6px;
+            padding: 4px;
             text-align: center;
         }
         
