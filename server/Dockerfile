@@ -6,11 +6,14 @@ RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     ca-certificates \
+    # CRITICAL: Install fonts (Liberation Sans is Arial-compatible)
     fonts-liberation \
     fonts-roboto \
-    fonts-noto \
-    fonts-dejavu \
+    fonts-noto-core \
+    fonts-dejavu-core \
     fonts-freefont-ttf \
+    fontconfig \
+    # Chromium dependencies
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
@@ -44,6 +47,8 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     lsb-release \
     xdg-utils \
+    && fc-cache -f -v \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

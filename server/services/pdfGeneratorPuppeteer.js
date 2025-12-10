@@ -7,6 +7,12 @@ const puppeteer = require('puppeteer');
 async function generateLeasePDF(leaseData) {
   let browser;
   try {
+    // DEBUGGING: Check environment
+    console.log('=== RENDER ENVIRONMENT DEBUG ===');
+    console.log('Node env:', process.env.NODE_ENV);
+    console.log('Platform:', process.platform);
+    console.log('Puppeteer executable:', process.env.PUPPETEER_EXECUTABLE_PATH || 'default');
+    
     // Puppeteer configuration for both development and production (Render)
     const puppeteerArgs = [
       '--no-sandbox',
@@ -48,6 +54,60 @@ async function generateLeasePDF(leaseData) {
         waitUntil: 'networkidle0',
         timeout: 30000
     });
+    
+    // DEBUGGING: Check fonts
+    const fontDebug = await page.evaluate(() => {
+        const testFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Roboto', 'Courier', 'Liberation Sans', 'DejaVu Sans'];
+        const available = testFonts.filter(font => 
+            document.fonts.check(`12px "${font}"`)
+        );
+        
+        // Check what font is actually being used
+        const testDiv = document.createElement('div');
+        testDiv.style.fontFamily = 'Liberation Sans, Arial, Helvetica, sans-serif';
+        testDiv.textContent = 'Test';
+        document.body.appendChild(testDiv);
+        const computedFont = window.getComputedStyle(testDiv).fontFamily;
+        document.body.removeChild(testDiv);
+        
+        return {
+            availableFonts: available,
+            actualFont: computedFont,
+            defaultFont: window.getComputedStyle(document.body).fontFamily
+        };
+    });
+    
+    console.log('🔍 Available fonts:', fontDebug.availableFonts);
+    console.log('🔍 Actual font in use:', fontDebug.actualFont);
+    console.log('🔍 Default body font:', fontDebug.defaultFont);
+    
+    // DEBUGGING: Check computed spacing
+    const spacingDebug = await page.evaluate(() => {
+        const field = document.querySelector('.field');
+        const subsection = document.querySelector('.subsection');
+        
+        if (!field) return { error: 'No .field element found' };
+        
+        const fieldStyles = window.getComputedStyle(field);
+        const subsectionStyles = subsection ? window.getComputedStyle(subsection) : null;
+        
+        return {
+            field: {
+                height: fieldStyles.height,
+                lineHeight: fieldStyles.lineHeight,
+                marginBottom: fieldStyles.marginBottom,
+                fontSize: fieldStyles.fontSize,
+                fontFamily: fieldStyles.fontFamily
+            },
+            subsection: subsectionStyles ? {
+                height: subsectionStyles.height,
+                marginBottom: subsectionStyles.marginBottom
+            } : null
+        };
+    });
+    
+    console.log('🔍 Field spacing:', JSON.stringify(spacingDebug, null, 2));
+    console.log('=== END DEBUG ===');
     
     // Force CSS recalculation for consistent rendering
     await page.evaluate(() => {
@@ -166,11 +226,12 @@ function generateLeaseHTML(data) {
         }
         
         body {
-            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-family: 'Liberation Sans', 'Arial', 'Helvetica', sans-serif;
             background: #f5f5f5;
             padding: 20px;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
             line-height: 1.2;
         }
         
@@ -212,50 +273,57 @@ function generateLeaseHTML(data) {
         }
         
         .section {
-            margin-bottom: 8px !important;
-            margin-top: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
             font-size: 10px;
             page-break-inside: avoid;
+            display: block;
         }
         
         .section-title {
             font-weight: bold;
-            margin-bottom: 3px !important;
-            margin-top: 0 !important;
+            margin: 0 0 2px 0 !important;
+            padding: 0 !important;
             font-size: 10px;
+            display: block;
+            line-height: 12px !important;
         }
         
         .field {
-            margin-bottom: 1px !important;
-            margin-top: 0 !important;
+            margin: 0 !important;
             padding: 0 !important;
-            display: flex;
-            align-items: baseline;
-            line-height: 1.2 !important;
+            display: block;
+            line-height: 12px !important;
+            height: 12px !important;
+            overflow: hidden;
+            font-size: 10px;
         }
         
         .label {
             font-weight: bold;
             width: 250px;
-            flex-shrink: 0;
+            display: inline-block;
             font-size: 9px;
             text-align: left;
-            display: inline-block;
             margin: 0 !important;
             padding: 0 !important;
+            vertical-align: top;
+            line-height: 12px !important;
         }
         
         .value {
-            flex: 1;
+            display: inline-block;
             font-size: 10px;
             margin: 0 !important;
             padding: 0 !important;
+            vertical-align: top;
+            line-height: 12px !important;
         }
         
         .subsection {
-            margin-left: 0px;
-            margin-bottom: 2px !important;
-            margin-top: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: block;
         }
         
         table {
