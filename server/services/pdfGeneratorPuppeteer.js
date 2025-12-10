@@ -17,11 +17,13 @@ async function generateLeasePDF(leaseData) {
       '--no-zygote',
       '--single-process', // Required for Render's limited resources
       '--disable-gpu',
-      '--font-render-hinting=none'
+      '--font-render-hinting=none', // Critical for consistent rendering
+      '--force-color-profile=srgb',
+      '--disable-font-subpixel-positioning' // Prevents spacing variations
     ];
 
     browser = await puppeteer.launch({
-      headless: true,
+      headless: 'new', // Use new headless mode for better consistency
       args: puppeteerArgs,
       // Use system Chrome if available (Render)
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
@@ -67,14 +69,13 @@ async function generateLeasePDF(leaseData) {
         });
     });
     
-    // Generate PDF with explicit A4 dimensions (in points)
+    // Generate PDF with consistent settings
     const pdfBuffer = await page.pdf({
-        width: '210mm',  // A4 width
-        height: '297mm', // A4 height
+        format: 'A4',
         printBackground: true,
-        preferCSSPageSize: false, // Use explicit dimensions
+        preferCSSPageSize: false, // Use format, not CSS (critical for consistency)
         displayHeaderFooter: false,
-        margin: { top: '0mm', right: '0mm', bottom: '0mm', left: '0mm' }
+        margin: { top: '0', right: '0', bottom: '0', left: '0' }
     });
 
     return pdfBuffer;
@@ -165,9 +166,12 @@ function generateLeaseHTML(data) {
         }
         
         body {
-            font-family: 'Arial', sans-serif;
+            font-family: 'Arial', 'Helvetica', sans-serif;
             background: #f5f5f5;
             padding: 20px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            line-height: 1.2;
         }
         
         .page {
@@ -211,6 +215,7 @@ function generateLeaseHTML(data) {
             margin-bottom: 8px !important;
             margin-top: 0 !important;
             font-size: 10px;
+            page-break-inside: avoid;
         }
         
         .section-title {
@@ -223,6 +228,7 @@ function generateLeaseHTML(data) {
         .field {
             margin-bottom: 1px !important;
             margin-top: 0 !important;
+            padding: 0 !important;
             display: flex;
             align-items: baseline;
             line-height: 1.2 !important;

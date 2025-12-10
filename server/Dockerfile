@@ -1,12 +1,16 @@
 # Server Dockerfile with Puppeteer for PDF generation
 FROM node:18-slim
 
-# Install dependencies for Puppeteer
+# Install dependencies for Puppeteer + fonts (critical for consistent rendering)
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     ca-certificates \
     fonts-liberation \
+    fonts-roboto \
+    fonts-noto \
+    fonts-dejavu \
+    fonts-freefont-ttf \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
@@ -24,7 +28,6 @@ RUN apt-get update && apt-get install -y \
     libnss3 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
-    libstdc++6 \
     libx11-6 \
     libx11-xcb1 \
     libxcb1 \
@@ -36,6 +39,7 @@ RUN apt-get update && apt-get install -y \
     libxi6 \
     libxrandr2 \
     libxrender1 \
+    libxshmfence1 \
     libxss1 \
     libxtst6 \
     lsb-release \
