@@ -37,10 +37,22 @@ async function generateLeasePDF(leaseData) {
     
     await page.setContent(html, { waitUntil: 'networkidle0' });
     
-    // Wait for fonts to load (critical for consistent rendering)
-    await page.evaluateHandle('document.fonts.ready');
-    // Extra wait for Render/production environments
-    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
+    // Force CSS recalculation for consistent rendering
+    await page.evaluate(() => {
+        // Force layout recalculation
+        document.body.offsetHeight;
+        // Wait for fonts
+        return document.fonts.ready;
+    });
+    
+    // Extra wait for Render/production environments - ensure everything is rendered
+    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 800)));
+    
+    // Force another layout pass before PDF generation
+    await page.evaluate(() => {
+        const elements = document.querySelectorAll('*');
+        elements.forEach(el => el.offsetHeight);
+    });
     
     // Generate PDF with A4 format
     const pdfBuffer = await page.pdf({
@@ -182,20 +194,24 @@ function generateLeaseHTML(data) {
         }
         
         .section {
-            margin-bottom: 8px;
+            margin-bottom: 8px !important;
+            margin-top: 0 !important;
             font-size: 10px;
         }
         
         .section-title {
             font-weight: bold;
-            margin-bottom: 3px;
+            margin-bottom: 3px !important;
+            margin-top: 0 !important;
             font-size: 10px;
         }
         
         .field {
-            margin-bottom: 1px;
+            margin-bottom: 1px !important;
+            margin-top: 0 !important;
             display: flex;
             align-items: baseline;
+            line-height: 1.2 !important;
         }
         
         .label {
@@ -205,16 +221,21 @@ function generateLeaseHTML(data) {
             font-size: 9px;
             text-align: left;
             display: inline-block;
+            margin: 0 !important;
+            padding: 0 !important;
         }
         
         .value {
             flex: 1;
             font-size: 10px;
+            margin: 0 !important;
+            padding: 0 !important;
         }
         
         .subsection {
             margin-left: 0px;
-            margin-bottom: 2px;
+            margin-bottom: 2px !important;
+            margin-top: 0 !important;
         }
         
         table {
