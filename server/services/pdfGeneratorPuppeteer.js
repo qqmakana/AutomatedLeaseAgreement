@@ -37,9 +37,10 @@ async function generateLeasePDF(leaseData) {
     
     await page.setContent(html, { waitUntil: 'networkidle0' });
     
-    // Wait for fonts to load
+    // Wait for fonts to load (critical for consistent rendering)
     await page.evaluateHandle('document.fonts.ready');
-    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
+    // Extra wait for Render/production environments
+    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
     
     // Generate PDF with A4 format
     const pdfBuffer = await page.pdf({
