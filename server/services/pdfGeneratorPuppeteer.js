@@ -194,7 +194,7 @@ async function generateLeasePDF(leaseData) {
     });
     
     // Extra wait for Render/production environments - ensure everything is rendered
-    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 1000)));
+    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
     
     // Force another layout pass before PDF generation
     await page.evaluate(() => {
@@ -349,14 +349,6 @@ function generateLeaseHTML(data) {
             line-height: 1.6;
         }
         
-        .section {
-            margin: 0 !important;
-            padding: 0 !important;
-            font-size: 10px;
-            page-break-inside: avoid;
-            display: block;
-        }
-        
         .section-title {
             font-weight: bold;
             margin: 0 0 2px 0 !important;
@@ -367,11 +359,11 @@ function generateLeaseHTML(data) {
         }
         
         .field {
-            margin: 0 !important;
+            margin: 0 0 1px 0 !important;
             padding: 0 !important;
             display: block;
             line-height: 12px !important;
-            height: 12px !important;
+            min-height: 12px !important;
             overflow: hidden;
             font-size: 10px;
             font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
@@ -387,6 +379,7 @@ function generateLeaseHTML(data) {
             padding: 0 !important;
             vertical-align: top;
             line-height: 12px !important;
+            height: 12px !important;
             font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
         }
         
@@ -397,12 +390,21 @@ function generateLeaseHTML(data) {
             padding: 0 !important;
             vertical-align: top;
             line-height: 12px !important;
+            min-height: 12px !important;
             font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
         }
         
         .subsection {
-            margin: 0 !important;
+            margin: 0 0 2px 0 !important;
             padding: 0 !important;
+            display: block;
+        }
+        
+        .section {
+            margin: 0 0 4px 0 !important;
+            padding: 0 !important;
+            font-size: 10px;
+            page-break-inside: avoid;
             display: block;
         }
         

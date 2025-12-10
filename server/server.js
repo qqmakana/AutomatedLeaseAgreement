@@ -39,10 +39,11 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
+// Start server - MUST listen on 0.0.0.0 for Fly.io
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌐 Listening on 0.0.0.0:${PORT}`);
   if (process.env.BYPASS_DB === 'true') {
     console.log(`⚠️  Database bypass mode: ENABLED (no database required)`);
     console.log(`   You can login/register with any credentials`);

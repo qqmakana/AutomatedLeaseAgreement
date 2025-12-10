@@ -459,12 +459,20 @@ router.post('/generate-pdf', async (req, res) => {
     // Ensure proper PDF response headers - use writeHead for binary
     const buffer = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
     
+    // Check if this is a preview request (no download header)
+    const isPreview = req.headers['x-preview'] === 'true' || req.query.preview === 'true';
+    const disposition = isPreview 
+      ? `inline; filename="lease-agreement-${Date.now()}.pdf"`
+      : `attachment; filename="lease-agreement-${Date.now()}.pdf"`;
+    
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
       'Content-Length': buffer.length,
-      'Content-Disposition': `attachment; filename="lease-agreement-${Date.now()}.pdf"`,
+      'Content-Disposition': disposition,
       'Cache-Control': 'no-cache',
-      'Access-Control-Allow-Origin': '*'
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Preview'
     });
     
     // Send buffer as binary
