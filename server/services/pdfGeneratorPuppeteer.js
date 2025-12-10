@@ -29,13 +29,23 @@ async function generateLeasePDF(leaseData) {
 
     const page = await browser.newPage();
     
+    // Set explicit viewport for consistent rendering across environments
+    await page.setViewport({
+        width: 1200,
+        height: 1600,
+        deviceScaleFactor: 1
+    });
+    
     // Emulate print media FIRST
     await page.emulateMediaType('print');
     
     // Generate HTML from lease data
     const html = generateLeaseHTML(leaseData);
     
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    await page.setContent(html, { 
+        waitUntil: 'networkidle0',
+        timeout: 30000
+    });
     
     // Force CSS recalculation for consistent rendering
     await page.evaluate(() => {
@@ -46,21 +56,25 @@ async function generateLeasePDF(leaseData) {
     });
     
     // Extra wait for Render/production environments - ensure everything is rendered
-    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 800)));
+    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 1000)));
     
     // Force another layout pass before PDF generation
     await page.evaluate(() => {
         const elements = document.querySelectorAll('*');
-        elements.forEach(el => el.offsetHeight);
+        elements.forEach(el => {
+            el.offsetHeight;
+            el.getBoundingClientRect();
+        });
     });
     
-    // Generate PDF with A4 format
+    // Generate PDF with explicit A4 dimensions (in points)
     const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      preferCSSPageSize: true,
-      displayHeaderFooter: false,
-      margin: { top: '0', right: '0', bottom: '0', left: '0' }
+        width: '210mm',  // A4 width
+        height: '297mm', // A4 height
+        printBackground: true,
+        preferCSSPageSize: false, // Use explicit dimensions
+        displayHeaderFooter: false,
+        margin: { top: '0mm', right: '0mm', bottom: '0mm', left: '0mm' }
     });
 
     return pdfBuffer;
