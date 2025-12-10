@@ -1,0 +1,103 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./prisma/dev.db"
+}
+
+// For PostgreSQL, uncomment below and comment above:
+// datasource db {
+//   provider = "postgresql"
+//   url      = env("DATABASE_URL")
+// }
+
+model User {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
+  password     String
+  name         String?
+  organization String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  leases       Lease[]
+  documents    Document[]
+  templates    LeaseTemplate[]
+}
+
+model Tenant {
+  id          Int      @id @default(autoincrement())
+  leaseId     Int      @unique
+  fullName    String
+  idNumber    String
+  email       String
+  phone       String
+  address     String
+  employment  String?
+  income      String?
+  
+  lease       Lease    @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+}
+
+model Landlord {
+  id      Int      @id @default(autoincrement())
+  leaseId Int      @unique
+  name    String
+  email   String
+  phone   String
+  
+  lease   Lease    @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+}
+
+model Lease {
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  propertyAddress String
+  propertyType    String?
+  leaseStartDate  DateTime
+  leaseEndDate    DateTime
+  monthlyRent     Float
+  securityDeposit Float
+  utilities       String?
+  maintenance     String?
+  status          String    @default("draft") // draft, active, expired, cancelled
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant          Tenant?
+  landlord        Landlord?
+}
+
+model Document {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  filename     String
+  originalName String
+  filePath     String
+  fileSize     Int
+  mimeType     String
+  documentType String   @default("unknown")
+  createdAt     DateTime @default(now())
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LeaseTemplate {
+  id          Int      @id @default(autoincrement())
+  userId      Int?
+  name        String
+  content     String   // JSON or template string
+  jurisdiction String  @default("ZA")
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+

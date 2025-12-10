@@ -1,0 +1,304 @@
+================================================================================
+                    COMPLETE TEST DATA FOR LEASE AGREEMENT GENERATION
+                    Copy and Paste These Sections to Test the App
+================================================================================
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 1: LANDLORD CIPC DOCUMENT
+═══════════════════════════════════════════════════════════════════════════════
+
+Copy this entire section and save as a file, then upload as "Landlord CIPC Document"
+
+================================================================================
+                    COMPANIES AND INTELLECTUAL PROPERTY COMMISSION
+                            REPUBLIC OF SOUTH AFRICA
+                         CERTIFICATE OF INCORPORATION
+================================================================================
+
+COMPANY NAME: BENAV PROPERTIES (PTY) LTD
+
+REGISTRATION NUMBER: 2018/060720/07
+
+VAT REGISTRATION NUMBER: 4200288134
+
+TRADING AS: BENAV PROPERTIES
+
+POSTAL ADDRESS:
+PO Box 789
+Pretoria
+Gauteng
+0001
+South Africa
+
+PHYSICAL ADDRESS:
+123 Property Boulevard
+Menlyn
+Pretoria
+Gauteng
+0181
+South Africa
+
+DATE OF INCORPORATION: 20 June 2018
+
+COMPANY TYPE: Private Company
+
+STATUS: Active
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 2: TENANT CIPC DOCUMENT
+═══════════════════════════════════════════════════════════════════════════════
+
+Copy this entire section and save as a file, then upload as "Tenant CIPC Document"
+
+================================================================================
+                    COMPANIES AND INTELLECTUAL PROPERTY COMMISSION
+                            REPUBLIC OF SOUTH AFRICA
+                         CERTIFICATE OF INCORPORATION
+================================================================================
+
+COMPANY NAME: TECH SOLUTIONS (PTY) LTD
+
+REGISTRATION NUMBER: 2019/123456/07
+
+VAT REGISTRATION NUMBER: 4123456789
+
+TRADING AS: TECH SOLUTIONS
+
+POSTAL ADDRESS:
+PO Box 12345
+Sandton
+Gauteng
+2196
+South Africa
+
+PHYSICAL ADDRESS:
+456 Business Park
+Corner of Main and Second Street
+Sandton
+Gauteng
+2196
+South Africa
+
+DATE OF INCORPORATION: 15 March 2019
+
+COMPANY TYPE: Private Company
+
+STATUS: Active
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 3: SURETY ID DOCUMENT
+═══════════════════════════════════════════════════════════════════════════════
+
+Copy this entire section and save as a file, then upload as "Surety ID Document"
+
+================================================================================
+                    REPUBLIC OF SOUTH AFRICA
+                    IDENTITY DOCUMENT
+================================================================================
+
+FULL NAME: JANE SMITH
+
+IDENTITY NUMBER: 9002155800085
+
+DATE OF BIRTH: 15 February 1990
+
+NATIONALITY: South African
+
+GENDER: Female
+
+ADDRESS:
+789 Residential Street
+Parktown
+Johannesburg
+Gauteng
+2193
+South Africa
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 4: FICA DOCUMENT (FOR PASTING)
+═══════════════════════════════════════════════════════════════════════════════
+
+Copy this entire section and paste into "Paste FICA Document Text" field
+
+================================================================================
+                    FICA COMPLIANCE DOCUMENT
+              Financial Intelligence Centre Act (FICA)
+                    Republic of South Africa
+================================================================================
+
+PART A: CLIENT IDENTIFICATION
+------------------------------
+Full Name: JOHN DOE
+Identity Number: 8501015800085
+Date of Birth: 01 January 1985
+Nationality: South African
+Gender: Male
+
+PART B: CONTACT DETAILS
+-----------------------
+Email Address: john.doe@email.com
+Mobile Number: +27 12 345 6789
+Alternative Contact: +27 11 987 6543
+
+PART C: RESIDENTIAL ADDRESS
+---------------------------
+Street Address: 123 Main Street
+Suburb: Sandton
+City: Johannesburg
+Province: Gauteng
+Postal Code: 2000
+Full Address: 123 Main Street, Sandton, Johannesburg, Gauteng, 2000
+
+PART D: EMPLOYMENT INFORMATION
+-------------------------------
+Occupation: Software Developer
+Employer Name: Tech Solutions (Pty) Ltd
+Employer Address: 456 Business Park, Sandton, 2196
+Monthly Income: R50,000
+Employment Status: Permanent Full-Time
+
+PART E: BANKING DETAILS
+------------------------
+Bank Name: First National Bank
+Account Type: Cheque Account
+Account Number: 62012345678
+Branch Code: 250655
+
+PART F: PROOF OF RESIDENCE
+---------------------------
+Document Type: Utility Bill (Electricity)
+Account Number: ELEC-123456789
+Date Issued: 15 November 2024
+Service Address: 123 Main Street, Sandton, Johannesburg, 2000
+
+SIGNATURE SECTION
+-----------------
+Date: 04 December 2024
+
+Signature of Client: _________________________
+
+Full Name: JOHN DOE
+
+═══════════════════════════════════════════════════════════════════════════════
+SECTION 5: MANUAL DATA TO ENTER IN THE APP
+═══════════════════════════════════════════════════════════════════════════════
+
+After uploading documents, fill in these fields manually:
+
+PREMISES INFORMATION:
+---------------------
+Unit: Unit 5
+Building Name: Business Park Centre
+Building Address: 456 Business Park, Sandton, Gauteng, 2196
+Size: 150 square meters
+Percentage: 5%
+Permitted Use: Office and administrative purposes
+
+LEASE TERMS:
+------------
+Years: 3
+Months: 0
+Commencement Date: 2025-01-01
+Termination Date: 2027-12-31
+Option Years: 3
+Option Months: 0
+Option Exercise Date: 2027-10-01
+
+FINANCIAL DETAILS - YEAR 1:
+---------------------------
+From Date: 2025-01-01
+To Date: 2025-12-31
+Basic Rent (Excl VAT): 15000
+Security: 3000
+Refuse: 500
+Rates: 2000
+
+FINANCIAL DETAILS - YEAR 2:
+---------------------------
+From Date: 2026-01-01
+To Date: 2026-12-31
+Basic Rent (Excl VAT): (Auto-calculated - should be R15,900.00)
+Security: (Auto-calculated based on Year 1 ratio)
+
+FINANCIAL DETAILS - YEAR 3:
+---------------------------
+From Date: 2027-01-01
+To Date: 2027-12-31
+Basic Rent (Excl VAT): (Auto-calculated - should be R16,854.00)
+Security: (Auto-calculated based on Year 1 ratio)
+
+DEPOSIT: 45000
+LEASE FEE: 750.00
+UTILITIES: METERED OR % AGE OF EXPENSE
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP-BY-STEP TESTING INSTRUCTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: Upload Documents
+-------------------------
+1. Open http://localhost:3000
+2. Copy Section 1 → Save as "landlord-cipc.txt" → Upload as "Landlord CIPC Document"
+3. Copy Section 2 → Save as "tenant-cipc.txt" → Upload as "Tenant CIPC Document"
+4. Copy Section 3 → Save as "surety-id.txt" → Upload as "Surety ID Document"
+
+STEP 2: Paste FICA Text (Alternative)
+--------------------------------------
+1. Copy Section 4 (entire FICA document)
+2. Scroll to "Or Paste FICA Document Text" section
+3. Paste the text
+4. Click "Extract Data from Pasted Text"
+
+STEP 3: Fill in Premises Information
+------------------------------------
+1. Fill in all fields in "Premises Information" section using Section 5 data
+
+STEP 4: Fill in Lease Terms
+----------------------------
+1. Fill in lease duration, dates using Section 5 data
+
+STEP 5: Fill in Financial Details
+-----------------------------------
+1. Fill in Year 1 financial details
+2. Year 2 and Year 3 will auto-calculate
+3. Fill in deposit and lease fee
+
+STEP 6: Generate Lease
+-----------------------
+1. Click "Preview" to see the lease
+2. Click "Export Lease" to download as text
+3. Click "Export PDF" to download as PDF
+
+EXPECTED RESULT:
+----------------
+✅ Complete lease agreement with all sections filled
+✅ Landlord: BENAV PROPERTIES (PTY) LTD
+✅ Tenant: TECH SOLUTIONS (PTY) LTD
+✅ Surety: JANE SMITH
+✅ All financial details calculated correctly
+✅ Professional formatting
+
+═══════════════════════════════════════════════════════════════════════════════
+QUICK COPY-PASTE TEST (FASTEST METHOD)
+═══════════════════════════════════════════════════════════════════════════════
+
+If you want to test quickly:
+
+1. Copy Section 4 (FICA Document) → Paste into "Paste FICA Document Text"
+2. Click "Extract Data from Pasted Text"
+3. Fill in remaining fields manually using Section 5
+4. Generate lease
+
+This will populate tenant and surety information quickly!
+
+================================================================================
+
+
+
+
+
+
+
+
+
+

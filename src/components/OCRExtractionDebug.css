@@ -1,0 +1,118 @@
+.ocr-debug-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.ocr-debug-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.ocr-debug-modal h3 {
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.debug-description {
+  color: #666;
+  margin-bottom: 20px;
+  font-size: 0.95em;
+}
+
+.debug-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.tab-btn {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: #666;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.tab-btn.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+}
+
+.tab-btn:hover {
+  color: #667eea;
+}
+
+.raw-text-display {
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 6px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+
+.extracted-fields {
+  display: grid;
+  gap: 15px;
+}
+
+.field-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  background: #f9f9f9;
+  border-radius: 6px;
+}
+
+.field-item .found {
+  color: #28a745;
+  font-weight: 600;
+}
+
+.field-item .not-found {
+  color: #dc3545;
+  font-weight: 600;
+}
+
+.debug-actions {
+  margin-top: 20px;
+  text-align: right;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

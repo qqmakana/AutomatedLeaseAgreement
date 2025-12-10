@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Lease PDF Generator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { text-align: center; color: #333; margin-bottom: 10px; }
+        h2 { color: #2196f3; margin: 25px 0 15px; border-bottom: 2px solid #2196f3; padding-bottom: 5px; }
+        .section { margin-bottom: 25px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #555; }
+        input, textarea { width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 5px; font-size: 14px; margin-bottom: 15px; }
+        textarea { font-family: 'Courier New', monospace; min-height: 200px; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        button { background: #4CAF50; color: white; border: none; padding: 15px 40px; font-size: 18px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 20px; }
+        button:hover { background: #45a049; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status { margin-top: 20px; padding: 15px; border-radius: 5px; text-align: center; font-weight: bold; }
+        .success { background: #e8f5e9; color: #2e7d32; }
+        .error { background: #ffebee; color: #c62828; }
+        .info { background: #e3f2fd; color: #1565c0; }
+        .hint { font-size: 12px; color: #999; margin-top: -10px; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏢 Lease Agreement Generator</h1>
+        <p style="text-align: center; color: #666; margin-bottom: 30px;">
+            Paste FICA document to auto-fill tenant details, then complete landlord & premises info
+        </p>
+        
+        <div class="section">
+            <h2>📄 Step 1: Paste FICA Document</h2>
+            <label for="ficaText">FICA Document Text:</label>
+            <textarea id="ficaText" placeholder="Paste your FICA document here... (tenant data will be auto-extracted)"></textarea>
+        </div>
+
+        <div class="section">
+            <h2>🏠 Step 2: Landlord Details</h2>
+            <label for="landlordName">Landlord Name:</label>
+            <input type="text" id="landlordName" placeholder="e.g., BENAV PROPERTIES (PTY) LTD">
+            
+            <div class="row">
+                <div>
+                    <label for="landlordPhone">Phone:</label>
+                    <input type="text" id="landlordPhone" placeholder="e.g., (0861) 999 118">
+                </div>
+                <div>
+                    <label for="landlordRegNo">Registration No:</label>
+                    <input type="text" id="landlordRegNo" placeholder="e.g., 2018/060720/07">
+                </div>
+            </div>
+            
+            <div class="row">
+                <div>
+                    <label for="landlordVatNo">VAT No:</label>
+                    <input type="text" id="landlordVatNo" placeholder="e.g., 4200288134">
+                </div>
+                <div>
+                    <label for="landlordBank">Bank:</label>
+                    <input type="text" id="landlordBank" placeholder="e.g., NEDBANK">
+                </div>
+            </div>
+            
+            <div class="row">
+                <div>
+                    <label for="landlordBranch">Branch:</label>
+                    <input type="text" id="landlordBranch" placeholder="e.g., NORTHERN GAUTENG">
+                </div>
+                <div>
+                    <label for="landlordAccountNo">Account No:</label>
+                    <input type="text" id="landlordAccountNo" placeholder="e.g., 120 459 4295">
+                </div>
+            </div>
+            
+            <label for="landlordBranchCode">Branch Code:</label>
+            <input type="text" id="landlordBranchCode" placeholder="e.g., 14690500">
+        </div>
+
+        <div class="section">
+            <h2>🏢 Step 3: Premises Details</h2>
+            <div class="row">
+                <div>
+                    <label for="premisesUnit">Unit:</label>
+                    <input type="text" id="premisesUnit" placeholder="e.g., UNIT 14">
+                </div>
+                <div>
+                    <label for="buildingName">Building Name:</label>
+                    <input type="text" id="buildingName" placeholder="e.g., RODIUM INDUSTRIAL PARK">
+                </div>
+            </div>
+            
+            <label for="buildingAddress">Building Address:</label>
+            <input type="text" id="buildingAddress" placeholder="e.g., CNR FABRIEK & MASJIEN ROADS, STRIJDOM PARK">
+            
+            <div class="row">
+                <div>
+                    <label for="premisesSize">Size (approx):</label>
+                    <input type="text" id="premisesSize" placeholder="e.g., 361.00m²">
+                </div>
+                <div>
+                    <label for="percentage">Proportionate Share %:</label>
+                    <input type="text" id="percentage" placeholder="e.g., 4.325%">
+                </div>
+            </div>
+            
+            <label for="permittedUse">Permitted Use:</label>
+            <input type="text" id="permittedUse" placeholder="e.g., COMPUTER SOFTWARE AND RELATED SERVICES">
+        </div>
+
+        <div class="section">
+            <h2>📅 Step 4: Lease Terms</h2>
+            <div class="row">
+                <div>
+                    <label for="leaseYears">Initial Period (Years):</label>
+                    <input type="number" id="leaseYears" value="3">
+                </div>
+                <div>
+                    <label for="leaseMonths">Initial Period (Months):</label>
+                    <input type="number" id="leaseMonths" value="0">
+                </div>
+            </div>
+            
+            <div class="row">
+                <div>
+                    <label for="commencementDate">Commencement Date:</label>
+                    <input type="date" id="commencementDate">
+                </div>
+                <div>
+                    <label for="terminationDate">Termination Date:</label>
+                    <input type="date" id="terminationDate">
+                </div>
+            </div>
+            
+            <div class="row">
+                <div>
+                    <label for="optionYears">Option Period (Years):</label>
+                    <input type="number" id="optionYears" value="3">
+                </div>
+                <div>
+                    <label for="optionMonths">Option Period (Months):</label>
+                    <input type="number" id="optionMonths" value="0">
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>💰 Step 5: Financial Details</h2>
+            <div class="row">
+                <div>
+                    <label for="basicRent">Basic Rent (excl. VAT):</label>
+                    <input type="number" id="basicRent" placeholder="e.g., 22730">
+                </div>
+                <div>
+                    <label for="security">Security Deposit:</label>
+                    <input type="number" id="security" placeholder="e.g., 1033.18">
+                </div>
+            </div>
+            
+            <div class="row">
+                <div>
+                    <label for="refuse">Refuse (monthly):</label>
+                    <input type="number" id="refuse" placeholder="e.g., 515.94">
+                </div>
+                <div>
+                    <label for="rates">Rates (monthly):</label>
+                    <input type="number" id="rates" placeholder="e.g., 251.29">
+                </div>
+            </div>
+        </div>
+
+        <button onclick="generatePDF()">🎯 Generate Complete Lease PDF</button>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        async function generatePDF() {
+            const btn = document.querySelector('button');
+            const statusDiv = document.getElementById('status');
+            
+            const ficaText = document.getElementById('ficaText').value.trim();
+            
+            if (!ficaText) {
+                showStatus('⚠️ Please paste FICA document text!', 'error');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Generating PDF...';
+            showStatus('📝 Processing...', 'info');
+            
+            try {
+                // Prepare payload with FICA text and all form data
+                const payload = {
+                    ficaText: ficaText,
+                    landlord: {
+                        name: document.getElementById('landlordName').value,
+                        phone: document.getElementById('landlordPhone').value,
+                        regNo: document.getElementById('landlordRegNo').value,
+                        vatNo: document.getElementById('landlordVatNo').value,
+                        bank: document.getElementById('landlordBank').value,
+                        branch: document.getElementById('landlordBranch').value,
+                        accountNo: document.getElementById('landlordAccountNo').value,
+                        branchCode: document.getElementById('landlordBranchCode').value
+                    },
+                    premises: {
+                        unit: document.getElementById('premisesUnit').value,
+                        buildingName: document.getElementById('buildingName').value,
+                        buildingAddress: document.getElementById('buildingAddress').value,
+                        size: document.getElementById('premisesSize').value,
+                        percentage: document.getElementById('percentage').value,
+                        permittedUse: document.getElementById('permittedUse').value
+                    },
+                    lease: {
+                        years: parseInt(document.getElementById('leaseYears').value) || 3,
+                        months: parseInt(document.getElementById('leaseMonths').value) || 0,
+                        commencementDate: document.getElementById('commencementDate').value,
+                        terminationDate: document.getElementById('terminationDate').value,
+                        optionYears: parseInt(document.getElementById('optionYears').value) || 3,
+                        optionMonths: parseInt(document.getElementById('optionMonths').value) || 0
+                    },
+                    financial: {
+                        year1: {
+                            basicRent: document.getElementById('basicRent').value,
+                            security: document.getElementById('security').value,
+                            refuse: document.getElementById('refuse').value,
+                            rates: document.getElementById('rates').value,
+                            from: document.getElementById('commencementDate').value,
+                            to: document.getElementById('terminationDate').value
+                        },
+                        year2: {},
+                        year3: {}
+                    }
+                };
+                
+                console.log('Sending payload:', payload);
+                
+                const response = await fetch('http://localhost:5000/api/leases/generate-pdf', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Lease_Agreement_${Date.now()}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showStatus('✅ PDF generated and downloaded successfully!', 'success');
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus('❌ Error: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🎯 Generate Complete Lease PDF';
+            }
+        }
+        
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status ' + type;
+        }
+        
+        // Set default dates
+        window.onload = function() {
+            const today = new Date();
+            const oneYearLater = new Date(today);
+            oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
+            
+            document.getElementById('commencementDate').valueAsDate = today;
+            document.getElementById('terminationDate').valueAsDate = oneYearLater;
+        };
+    </script>
+</body>
+</html>
+
+
+
+

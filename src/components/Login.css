@@ -1,0 +1,145 @@
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.login-box {
+  background: white;
+  border-radius: 12px;
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+.login-box h2 {
+  color: #333;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.login-subtitle {
+  color: #666;
+  text-align: center;
+  margin-bottom: 30px;
+  font-size: 0.95em;
+}
+
+.error-message {
+  background: #fee;
+  color: #c33;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  border-left: 4px solid #c33;
+  font-size: 0.9em;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #333;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 1em;
+  transition: border-color 0.3s ease;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.btn {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-primary {
+  background: #667eea;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #5568d3;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-switch {
+  text-align: center;
+  margin-top: 20px;
+  color: #666;
+  font-size: 0.9em;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #667eea;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+  padding: 0;
+}
+
+.link-button:hover {
+  color: #5568d3;
+}
+
+.login-note {
+  margin-top: 20px;
+  padding: 15px;
+  background: #f0f0ff;
+  border-radius: 6px;
+  border-left: 4px solid #667eea;
+}
+
+.login-note small {
+  color: #666;
+  line-height: 1.5;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

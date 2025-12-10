@@ -1,0 +1,119 @@
+.step4-review {
+  animation: fadeIn 0.3s ease;
+}
+
+.review-sections {
+  margin-bottom: 30px;
+}
+
+.review-section {
+  background: #f9f9f9;
+  padding: 25px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border-left: 4px solid #667eea;
+}
+
+.review-section h3 {
+  color: #667eea;
+  margin-bottom: 20px;
+  font-size: 1.3em;
+}
+
+.review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
+}
+
+.review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.review-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.review-label {
+  font-weight: 600;
+  color: #666;
+  font-size: 0.9em;
+}
+
+.review-value {
+  color: #333;
+  font-size: 1em;
+}
+
+.review-value.highlight {
+  color: #667eea;
+  font-weight: 600;
+  font-size: 1.1em;
+}
+
+.download-section {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 30px;
+  border-radius: 12px;
+  text-align: center;
+  color: white;
+  margin-bottom: 30px;
+}
+
+.download-section h3 {
+  color: white;
+  margin-bottom: 10px;
+  font-size: 1.5em;
+}
+
+.download-section p {
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 10px;
+}
+
+.download-note {
+  font-size: 0.9em;
+  color: rgba(255, 255, 255, 0.8);
+  font-style: italic;
+  margin-top: 15px;
+}
+
+.btn-download {
+  margin-top: 20px;
+  background: white;
+  color: #667eea;
+  font-size: 1.1em;
+  padding: 15px 40px;
+}
+
+.btn-download:hover {
+  background: #f0f0f0;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 768px) {
+  .review-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

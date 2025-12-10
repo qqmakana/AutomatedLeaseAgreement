@@ -1,0 +1,165 @@
+.step1-upload {
+  animation: fadeIn 0.3s ease;
+}
+
+.step-description {
+  color: #666;
+  margin-bottom: 30px;
+  font-size: 1.1em;
+}
+
+.upload-area {
+  border: 3px dashed #e0e0e0;
+  border-radius: 12px;
+  padding: 60px 20px;
+  text-align: center;
+  background: #f9f9f9;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.upload-area:hover {
+  border-color: #667eea;
+  background: #f0f0ff;
+}
+
+.upload-area.drag-active {
+  border-color: #667eea;
+  background: #e8eaff;
+  transform: scale(1.02);
+}
+
+.upload-icon {
+  font-size: 4em;
+  margin-bottom: 20px;
+}
+
+.upload-text {
+  font-size: 1.2em;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.upload-label {
+  color: #667eea;
+  text-decoration: underline;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.upload-label:hover {
+  color: #5568d3;
+}
+
+.upload-hint {
+  color: #999;
+  font-size: 0.9em;
+}
+
+.uploaded-files {
+  margin-top: 30px;
+}
+
+.uploaded-files h3 {
+  color: #333;
+  margin-bottom: 15px;
+}
+
+.files-list {
+  display: grid;
+  gap: 15px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s ease;
+}
+
+.file-item:hover {
+  border-color: #667eea;
+  background: #f0f0ff;
+}
+
+.file-preview {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.file-icon {
+  font-size: 2.5em;
+  width: 60px;
+  text-align: center;
+}
+
+.file-info {
+  flex: 1;
+}
+
+.file-name {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 5px;
+  word-break: break-word;
+}
+
+.file-details {
+  color: #999;
+  font-size: 0.9em;
+}
+
+.remove-file-btn {
+  background: #ff4444;
+  color: white;
+  border: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 1.5em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.remove-file-btn:hover {
+  background: #cc0000;
+  transform: scale(1.1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,47 @@
+================================================================================
+              SOUTH AFRICAN IDENTITY DOCUMENT - SAMPLE
+                    REPUBLIC OF SOUTH AFRICA
+================================================================================
+
+IDENTITY INFORMATION:
+----------------------
+Name: JOHN DOE
+ID Number: 8501015800085
+Date of Birth: 01 January 1985
+Gender: MALE
+Nationality: SOUTH AFRICAN
+
+CONTACT INFORMATION:
+--------------------
+Email: john.doe@email.com
+Phone: +27 12 345 6789
+Address: 123 Main Street, Johannesburg, Gauteng, 2000
+
+EMPLOYMENT INFORMATION:
+-----------------------
+Occupation: Software Developer
+Employer: Tech Solutions (Pty) Ltd
+Monthly Income: R50,000
+
+================================================================================
+This is a sample document for testing OCR functionality
+Document Number: SAMPLE-2024-001
+================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

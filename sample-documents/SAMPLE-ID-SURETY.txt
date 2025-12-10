@@ -1,0 +1,37 @@
+================================================================================
+                    REPUBLIC OF SOUTH AFRICA
+                    IDENTITY DOCUMENT
+================================================================================
+
+FULL NAME: JANE SMITH
+
+IDENTITY NUMBER: 9002155800085
+
+DATE OF BIRTH: 15 February 1990
+
+NATIONALITY: South African
+
+GENDER: Female
+
+ADDRESS:
+789 Residential Street
+Parktown
+Johannesburg
+Gauteng
+2193
+South Africa
+
+================================================================================
+This is a sample ID document for testing purposes only
+Document Reference: ID-SAMPLE-SURETY-001
+================================================================================
+
+
+
+
+
+
+
+
+
+

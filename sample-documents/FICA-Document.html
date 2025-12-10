@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: 'Times New Roman', serif;
+            width: 800px;
+            margin: 20px auto;
+            padding: 40px;
+            background: white;
+            border: 1px solid #000;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #000;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 20px;
+            margin: 5px 0;
+            text-transform: uppercase;
+        }
+        .header h2 {
+            font-size: 16px;
+            margin: 5px 0;
+            font-weight: normal;
+        }
+        .section {
+            margin: 25px 0;
+            padding: 15px;
+            border: 1px solid #ccc;
+        }
+        .section-title {
+            font-weight: bold;
+            font-size: 14px;
+            text-transform: uppercase;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #000;
+            padding-bottom: 5px;
+        }
+        .field {
+            margin: 10px 0;
+            display: flex;
+        }
+        .field-label {
+            font-weight: bold;
+            width: 200px;
+            min-width: 200px;
+        }
+        .field-value {
+            flex: 1;
+        }
+        .signature-box {
+            margin-top: 40px;
+            border-top: 1px solid #000;
+            padding-top: 20px;
+        }
+        .signature-line {
+            margin-top: 60px;
+            border-top: 1px solid #000;
+            width: 300px;
+        }
+        .stamp-placeholder {
+            border: 2px dashed #999;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>FICA COMPLIANCE DOCUMENT</h1>
+        <h2>Financial Intelligence Centre Act (FICA)</h2>
+        <p>Republic of South Africa</p>
+    </div>
+
+    <div class="section">
+        <div class="section-title">PART A: CLIENT IDENTIFICATION</div>
+        
+        <div class="field">
+            <div class="field-label">Full Name:</div>
+            <div class="field-value">JOHN DOE</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Identity Number:</div>
+            <div class="field-value">8501015800085</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Date of Birth:</div>
+            <div class="field-value">01 January 1985</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Nationality:</div>
+            <div class="field-value">South African</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Gender:</div>
+            <div class="field-value">Male</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">PART B: CONTACT DETAILS</div>
+        
+        <div class="field">
+            <div class="field-label">Email Address:</div>
+            <div class="field-value">john.doe@email.com</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Mobile Number:</div>
+            <div class="field-value">+27 12 345 6789</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Alternative Contact:</div>
+            <div class="field-value">+27 11 987 6543</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">PART C: RESIDENTIAL ADDRESS</div>
+        
+        <div class="field">
+            <div class="field-label">Street Address:</div>
+            <div class="field-value">123 Main Street</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Suburb:</div>
+            <div class="field-value">Sandton</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">City:</div>
+            <div class="field-value">Johannesburg</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Province:</div>
+            <div class="field-value">Gauteng</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Postal Code:</div>
+            <div class="field-value">2000</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Full Address:</div>
+            <div class="field-value">123 Main Street, Sandton, Johannesburg, Gauteng, 2000</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">PART D: EMPLOYMENT INFORMATION</div>
+        
+        <div class="field">
+            <div class="field-label">Occupation:</div>
+            <div class="field-value">Software Developer</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Employer Name:</div>
+            <div class="field-value">Tech Solutions (Pty) Ltd</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Employer Address:</div>
+            <div class="field-value">456 Business Park, Sandton, 2196</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Monthly Income:</div>
+            <div class="field-value">R50,000</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Employment Status:</div>
+            <div class="field-value">Permanent Full-Time</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">PART E: BANKING DETAILS</div>
+        
+        <div class="field">
+            <div class="field-label">Bank Name:</div>
+            <div class="field-value">First National Bank</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Account Type:</div>
+            <div class="field-value">Cheque Account</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Account Number:</div>
+            <div class="field-value">62012345678</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Branch Code:</div>
+            <div class="field-value">250655</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">PART F: PROOF OF RESIDENCE</div>
+        
+        <div class="field">
+            <div class="field-label">Document Type:</div>
+            <div class="field-value">Utility Bill (Electricity)</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Account Number:</div>
+            <div class="field-value">ELEC-123456789</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Date Issued:</div>
+            <div class="field-value">15 November 2024</div>
+        </div>
+        
+        <div class="field">
+            <div class="field-label">Service Address:</div>
+            <div class="field-value">123 Main Street, Sandton, Johannesburg, 2000</div>
+        </div>
+    </div>
+
+    <div class="signature-box">
+        <div class="field">
+            <div class="field-label">Date:</div>
+            <div class="field-value">04 December 2024</div>
+        </div>
+        
+        <div style="margin-top: 40px;">
+            <div class="signature-line"></div>
+            <div style="text-align: center; margin-top: 5px;">Signature of Client</div>
+        </div>
+        
+        <div style="margin-top: 30px;">
+            <div class="field-label">Full Name:</div>
+            <div class="field-value">JOHN DOE</div>
+        </div>
+    </div>
+
+    <div class="stamp-placeholder">
+        [OFFICIAL STAMP / SEAL PLACEHOLDER]
+    </div>
+
+    <div style="margin-top: 30px; font-size: 10px; text-align: center; color: #666;">
+        <p>This is a sample FICA document for testing purposes only</p>
+        <p>Document Reference: FICA-SAMPLE-2024-001</p>
+        <p>Generated: 04 December 2024</p>
+    </div>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

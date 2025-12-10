@@ -1,0 +1,212 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    EXPECTED OUTPUT REFERENCE GUIDE
+═══════════════════════════════════════════════════════════════════════════════
+
+This document shows what the app SHOULD extract and generate when you paste
+the South-African-FICA-Sample.txt document.
+
+═══════════════════════════════════════════════════════════════════════════════
+                    STEP 1: EXTRACTED DATA (What Should Appear)
+═══════════════════════════════════════════════════════════════════════════════
+
+After pasting the FICA document and clicking "Create Lease Agreement", 
+the app should extract and display:
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ EXTRACTED TENANT INFORMATION                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Full Name:        Thandiwe Nkosi
+ID Number:        8501015800085
+Email:            thandiwe.nkosi@email.com
+Phone:            082 456 7890
+Address:          123 Main Street, Sunnydale, Johannesburg, Gauteng, 2091
+Employment:       Production Manager at ABC Manufacturing (Pty) Ltd
+Income:           R 28,500.00 (or R28,500 or R28500 or similar format)
+
+═══════════════════════════════════════════════════════════════════════════════
+                    STEP 2: FINAL LEASE DOCUMENT (What Should Be Generated)
+═══════════════════════════════════════════════════════════════════════════════
+
+Below is what the final lease document should look like with the extracted data:
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                                                                               ║
+║                    RESIDENTIAL LEASE AGREEMENT                                ║
+║                                                                               ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+
+                                                                    Date: 2024/12/04
+
+
+This Lease Agreement ("Agreement") is entered into on December 4, 2024, 
+between the Landlord and Tenant identified below.
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                             1. PARTIES                                        ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+
+  ┌─ LANDLORD ────────────────────────────────────────────────────────────────┐
+  │                                                                             │
+  │  Name:     [Landlord Name]                                                 │
+  │  Email:    [landlord@email.com]                                            │
+  │  Phone:    [000-000-0000]                                                  │
+  │                                                                             │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+
+  ┌─ TENANT ───────────────────────────────────────────────────────────────────┐
+  │                                                                             │
+  │  Name:          Thandiwe Nkosi                                             │
+  │  ID Number:     8501015800085                                              │
+  │  Email:         thandiwe.nkosi@email.com                                   │
+  │  Phone:         082 456 7890                                               │
+  │  Address:       123 Main Street, Sunnydale, Johannesburg, Gauteng, 2091   │
+  │  Occupation:    Production Manager at ABC Manufacturing (Pty) Ltd          │
+  │  Monthly Income: R 28,500.00                                               │
+  │                                                                             │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                        2. PROPERTY DESCRIPTION                                ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+
+The Landlord hereby leases to the Tenant, and the Tenant hereby leases from the 
+Landlord, the following described premises:
+
+
+  ┌───────────────────────────────────────────────────────────────────────────┐
+  │  Property Address:  [Property Address]                                     │
+  │  Property Type:     Residential                                            │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+
+The Tenant shall have the exclusive right to use and occupy the Property for 
+residential purposes only, subject to the terms and conditions of this Agreement.
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                        3. LEASE TERM AND POSSESSION                            ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+
+  TERM: This lease shall commence on [Start Date] 
+        ("Commencement Date") and shall terminate on [End Date] 
+        ("Termination Date"), unless sooner terminated in accordance with the 
+        provisions of this Agreement.
+
+  DURATION: The lease term is [Duration].
+
+  POSSESSION: The Tenant shall be entitled to possession of the Property on the 
+              Commencement Date, provided that all required payments have been 
+              made and this Agreement has been fully executed.
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                             4. RENTAL PAYMENTS                                 ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+
+  MONTHLY RENT: The Tenant agrees to pay to the Landlord a monthly rental 
+                amount of [Amount] ("Monthly Rent"), payable in advance on or 
+                before the first day of each calendar month during the term of 
+                this lease.
+
+  [... rest of lease sections ...]
+
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                             16. SIGNATURES                                     ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+
+  ┌─ TENANT ───────────────────────────────────────────────────────────────────┐
+  │                                                                             │
+  │                                                                             │
+  │  _________________________                    _________________________    │
+  │  Signature                                   Date                          │
+  │                                                                             │
+  │  Print Name: Thandiwe Nkosi                                                 │
+  │                                                                             │
+  │                                                                             │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                    KEY POINTS TO VERIFY
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ CORRECT OUTPUT - The app is working if you see:
+
+1. Name extracted correctly: "Thandiwe Nkosi"
+2. ID Number extracted: "8501015800085" (13 digits)
+3. Email extracted: "thandiwe.nkosi@email.com"
+4. Phone extracted: "082 456 7890" (or similar format)
+5. Address extracted: Should include "123 Main Street", "Sunnydale", 
+   "Johannesburg", "Gauteng", "2091"
+6. Employment extracted: Should mention "Production Manager" or 
+   "ABC Manufacturing"
+7. Income extracted: Should show "R 28,500" or similar format
+8. Lease document has elegant boxed formatting
+9. Tenant name appears correctly in the lease document
+10. ID number appears correctly in the lease document
+
+❌ WRONG OUTPUT - The app needs fixing if you see:
+
+1. Name shows as "John Doe" or placeholder text
+2. ID Number is missing or incorrect
+3. Empty fields when data should be extracted
+4. Wrong data extracted (different name, wrong ID, etc.)
+5. Error messages instead of extracted data
+6. Lease document doesn't show the extracted tenant information
+7. Plain text formatting instead of elegant boxed design
+
+═══════════════════════════════════════════════════════════════════════════════
+                    TESTING CHECKLIST
+═══════════════════════════════════════════════════════════════════════════════
+
+□ Step 1: Paste FICA document text
+□ Step 2: Click "Create Lease Agreement"
+□ Step 3: Verify extracted data matches above
+□ Step 4: Proceed to Lease Details (Step 2)
+□ Step 5: Fill in lease details (property address, rent, dates, etc.)
+□ Step 6: Review lease document
+□ Step 7: Verify tenant information appears correctly in lease
+□ Step 8: Verify elegant formatting is present
+□ Step 9: Download lease as PDF or text file
+
+═══════════════════════════════════════════════════════════════════════════════
+                    TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════
+
+If the output doesn't match:
+
+1. Check that you copied the ENTIRE FICA document text
+2. Make sure you pasted it in the correct field (FICA Document Text)
+3. Check browser console for any error messages
+4. Try refreshing the page and pasting again
+5. Verify the app is connected to the backend (check network tab)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
