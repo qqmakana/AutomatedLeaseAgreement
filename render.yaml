@@ -1,0 +1,26 @@
+services:
+  # Backend API Service
+  - type: web
+    name: lease-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    rootDir: server
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: NODE_ENV
+        value: production
+
+  # Frontend Static Site
+  - type: static
+    name: lease-frontend
+    buildCommand: npm install && npm run build
+    publishPath: build
+    envVars:
+      - key: REACT_APP_API_URL
+        # This will be updated after backend deploys
+        # Format: https://lease-backend.onrender.com/api
+        value: https://lease-backend.onrender.com/api
+
