@@ -1,5 +1,15 @@
 // API service for backend communication
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// Support runtime config (for production) or build-time env vars
+const getApiBaseUrl = () => {
+  // Check for runtime config (set in public/runtime-config.js)
+  if (window.__RUNTIME_CONFIG__ && window.__RUNTIME_CONFIG__.REACT_APP_API_URL) {
+    return window.__RUNTIME_CONFIG__.REACT_APP_API_URL;
+  }
+  // Fall back to build-time env var or localhost
+  return process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Get auth token from localStorage
 const getAuthToken = () => {
@@ -172,12 +182,19 @@ export const leasesAPI = {
     return blob;
   },
 
-  generatePDFFromData: async (extractedData) => {
+  generatePDFFromData: async (extractedData, isPreview = false) => {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    // Add preview header if this is a preview request
+    if (isPreview) {
+      headers['X-Preview'] = 'true';
+    }
+    
     const response = await fetch(`${API_BASE_URL}/leases/generate-pdf`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(extractedData),
     });
 

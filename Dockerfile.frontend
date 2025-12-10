@@ -1,0 +1,36 @@
+# Production Dockerfile for React Frontend
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies (including dev dependencies for build)
+RUN npm install
+
+# Build arguments for environment variables (must be before COPY)
+ARG REACT_APP_API_URL=https://lease-backend.fly.dev/api
+ENV REACT_APP_API_URL=$REACT_APP_API_URL
+
+# Copy source code
+COPY . .
+
+# Build the React app (environment variables are baked in at build time)
+RUN npm run build
+
+# Production stage - serve with nginx
+FROM nginx:alpine
+
+# Copy built files from builder
+COPY --from=builder /app/build /usr/share/nginx/html
+
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Expose port 80
+EXPOSE 80
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]
+
