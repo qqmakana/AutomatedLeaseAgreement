@@ -181,18 +181,18 @@ function generateLeaseHTML(data) {
         }
         
         .section {
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             font-size: 10px;
         }
         
         .section-title {
             font-weight: bold;
-            margin-bottom: 5px;
+            margin-bottom: 3px;
             font-size: 10px;
         }
         
         .field {
-            margin-bottom: 3px;
+            margin-bottom: 1px;
             display: flex;
             align-items: baseline;
         }
@@ -213,7 +213,7 @@ function generateLeaseHTML(data) {
         
         .subsection {
             margin-left: 0px;
-            margin-bottom: 5px;
+            margin-bottom: 2px;
         }
         
         table {
