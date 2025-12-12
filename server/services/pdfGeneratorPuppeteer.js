@@ -1,697 +1,528 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
-/**
- * Generate PDF lease document using Puppeteer (HTML/CSS rendering)
- * This provides perfect CSS rendering and spacing control
- */
 async function generateLeasePDF(leaseData) {
   let browser;
   try {
-    // DEBUGGING: Check environment
-    console.log('=== RENDER ENVIRONMENT DEBUG ===');
-    console.log('Node env:', process.env.NODE_ENV);
-    console.log('Platform:', process.platform);
-    console.log('Puppeteer executable:', process.env.PUPPETEER_EXECUTABLE_PATH || 'default');
+    console.log('🚀 Starting PDF generation...');
     
-    // Puppeteer configuration - adjust for environment
     const isProduction = process.env.NODE_ENV === 'production';
-    const puppeteerArgs = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-      '--font-render-hinting=none', // Critical for consistent rendering
-      '--force-color-profile=srgb',
-      '--disable-font-subpixel-positioning' // Prevents spacing variations
-    ];
+    const launchOptions = {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    };
     
-    // Add --single-process only in production (Render) - can cause issues locally
     if (isProduction) {
-      puppeteerArgs.push('--single-process');
-    }
-
-    // Determine Chromium path:
-    // - In production (Render Docker): Use system Chromium (/usr/bin/chromium) installed via Dockerfile
-    // - In development: Use Puppeteer's bundled Chromium
-    let chromiumPath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    
-    // Auto-detect system Chromium in production if not explicitly set
-    if (!chromiumPath && isProduction) {
       const systemChromiumPaths = ['/usr/bin/chromium', '/usr/bin/chromium-browser'];
       for (const path of systemChromiumPaths) {
         if (fs.existsSync(path)) {
-          chromiumPath = path;
-          console.log(`✅ Using system Chromium: ${path}`);
+          launchOptions.executablePath = path;
           break;
         }
       }
     }
     
-    const launchOptions = {
-      headless: 'new',
-      args: puppeteerArgs
-    };
-    
-    // Use system Chromium if available (production), otherwise use bundled (development)
-    if (chromiumPath) {
-      launchOptions.executablePath = chromiumPath;
-      console.log(`🔧 Puppeteer executable: ${chromiumPath}`);
-    } else {
-      console.log('🔧 Puppeteer executable: bundled Chromium');
-    }
-    
     browser = await puppeteer.launch(launchOptions);
-
     const page = await browser.newPage();
     
-    // Set explicit viewport for consistent rendering across environments
-    await page.setViewport({
-        width: 1200,
-        height: 1600,
-        deviceScaleFactor: 1
-    });
-    
-    // Emulate print media FIRST
-    await page.emulateMediaType('print');
-    
-    // Generate HTML from lease data
     const html = generateLeaseHTML(leaseData);
     
+    // Debug: Write HTML to file for inspection
+    const fs = require('fs');
+    fs.writeFileSync('debug-lease.html', html, 'utf8');
+    console.log('📝 Debug HTML written to: debug-lease.html');
+    
+    // Set content with increased timeout and less strict waiting
     await page.setContent(html, { 
-        waitUntil: 'networkidle0',
-        timeout: 30000
+      waitUntil: 'domcontentloaded',
+      timeout: 60000 // 60 seconds timeout
     });
     
-    // DEBUGGING: Comprehensive font and layout verification
-    const fontDebug = await page.evaluate(() => {
-        // Test multiple font names (Liberation Sans has variations)
-        const testFonts = [
-            'Liberation Sans',
-            'LiberationSans',
-            'Liberation Sans Regular',
-            'Arial',
-            'Helvetica',
-            'DejaVu Sans',
-            'Roboto',
-            'Times New Roman'
-        ];
-        
-        const available = [];
-        testFonts.forEach(font => {
-            if (document.fonts.check(`12px "${font}"`)) {
-                available.push(font);
-            }
-        });
-        
-        // Check what font is actually being used on body
-        const bodyElement = document.body;
-        const bodyComputed = window.getComputedStyle(bodyElement);
-        const bodyFontFamily = bodyComputed.fontFamily;
-        
-        // Check what font is actually being used on a field element
-        const testField = document.querySelector('.field');
-        let fieldFontFamily = 'N/A';
-        let fieldMetrics = null;
-        
-        if (testField) {
-            const fieldComputed = window.getComputedStyle(testField);
-            fieldFontFamily = fieldComputed.fontFamily;
-            fieldMetrics = {
-                fontSize: fieldComputed.fontSize,
-                lineHeight: fieldComputed.lineHeight,
-                height: fieldComputed.height,
-                marginBottom: fieldComputed.marginBottom,
-                paddingTop: fieldComputed.paddingTop,
-                paddingBottom: fieldComputed.paddingBottom
-            };
-        }
-        
-        // Verify Liberation Sans is available via font loading API
-        return new Promise((resolve) => {
-            document.fonts.ready.then(() => {
-                const liberationAvailable = document.fonts.check('12px "Liberation Sans"') ||
-                                           document.fonts.check('12px Liberation Sans') ||
-                                           available.some(f => f.toLowerCase().includes('liberation'));
-                
-                resolve({
-                    availableFonts: available,
-                    liberationSansAvailable: liberationAvailable,
-                    bodyFontFamily: bodyFontFamily,
-                    fieldFontFamily: fieldFontFamily,
-                    fieldMetrics: fieldMetrics,
-                    totalFontsLoaded: document.fonts.size
-                });
-            });
-        });
-    });
-    
-    console.log('=== FONT VERIFICATION ===');
-    console.log('🔍 Available fonts:', fontDebug.availableFonts);
-    console.log('🔍 Liberation Sans available:', fontDebug.liberationSansAvailable);
-    console.log('🔍 Body font family:', fontDebug.bodyFontFamily);
-    console.log('🔍 Field font family:', fontDebug.fieldFontFamily);
-    console.log('🔍 Field metrics:', JSON.stringify(fontDebug.fieldMetrics, null, 2));
-    console.log('🔍 Total fonts loaded:', fontDebug.totalFontsLoaded);
-    
-    // DEBUGGING: Check computed spacing
-    const spacingDebug = await page.evaluate(() => {
-        const field = document.querySelector('.field');
-        const subsection = document.querySelector('.subsection');
-        
-        if (!field) return { error: 'No .field element found' };
-        
-        const fieldStyles = window.getComputedStyle(field);
-        const subsectionStyles = subsection ? window.getComputedStyle(subsection) : null;
-        
-        return {
-            field: {
-                height: fieldStyles.height,
-                lineHeight: fieldStyles.lineHeight,
-                marginBottom: fieldStyles.marginBottom,
-                fontSize: fieldStyles.fontSize,
-                fontFamily: fieldStyles.fontFamily
-            },
-            subsection: subsectionStyles ? {
-                height: subsectionStyles.height,
-                marginBottom: subsectionStyles.marginBottom
-            } : null
-        };
-    });
-    
-    console.log('🔍 Field spacing:', JSON.stringify(spacingDebug, null, 2));
-    console.log('=== END DEBUG ===');
-    
-    // Force CSS recalculation for consistent rendering
-    await page.evaluate(() => {
-        // Force layout recalculation
-        document.body.offsetHeight;
-        // Wait for fonts
-        return document.fonts.ready;
-    });
-    
-    // Extra wait for Render/production environments - ensure everything is rendered
-    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
-    
-    // Force another layout pass before PDF generation
-    await page.evaluate(() => {
-        const elements = document.querySelectorAll('*');
-        elements.forEach(el => {
-            el.offsetHeight;
-            el.getBoundingClientRect();
-        });
-    });
-    
-    // Generate PDF with consistent settings
     const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        preferCSSPageSize: false, // Use format, not CSS (critical for consistency)
-        displayHeaderFooter: false,
-        margin: { top: '0', right: '0', bottom: '0', left: '0' }
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '0', right: '0', bottom: '0', left: '0' }, // Use CSS @page margins instead
+      preferCSSPageSize: true
     });
-
+    
+    await browser.close();
+    console.log('✅ PDF generated successfully');
     return pdfBuffer;
   } catch (error) {
-    console.error('Puppeteer PDF generation error:', error);
+    if (browser) await browser.close();
+    console.error('❌ PDF error:', error);
     throw error;
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
   }
 }
 
-/**
- * Generate HTML template from lease data
- */
 function generateLeaseHTML(data) {
-  // Safely destructure with defaults
-  const { 
-    landlord = {}, 
-    tenant = {}, 
-    surety = {}, 
-    premises = {}, 
-    lease = {}, 
-    financial = {},
-    showFinancialYear2 = true,
-    showFinancialYear3 = true
-  } = data || {};
+  const { landlord = {}, tenant = {}, premises = {}, lease = {}, financial = {}, surety = {} } = data || {};
   
-  // Format helpers
-  const formatDateLong = (dateStr) => {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const day = String(date.getDate()).padStart(2, '0');
-    const monthNames = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
-    const month = monthNames[date.getMonth()];
-    const year = date.getFullYear();
-    return `${day} ${month} ${year}`;
+  // Get rates effective date (defaults to 01/06/2025 if not provided)
+  const ratesEffectiveDate = financial.ratesEffectiveDate || '2025-06-01';
+  
+  const formatDateLong = (d) => {
+    if (!d) return '';
+    const date = new Date(d);
+    const months = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+    return `${String(date.getDate()).padStart(2,'0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
   };
   
-  const formatDateShort = (dateStr) => {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
+  const formatDateShort = (d) => {
+    if (!d) return '';
+    const date = new Date(d);
+    return `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}/${date.getFullYear()}`;
   };
   
-  const formatCurrency = (amount) => {
-    if (!amount || amount === '') return 'N/A';
-    const num = parseFloat(amount);
-    if (isNaN(num)) return amount;
-    return `R ${num.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatMoney = (amt) => {
+    if (!amt) return '';
+    const num = parseFloat(amt);
+    if (isNaN(num)) return '';
+    return 'R ' + num.toLocaleString('en-ZA', {minimumFractionDigits:2, maximumFractionDigits:2});
   };
   
-  const calculateVAT = (amount) => {
-    if (!amount || amount === '') return 'N/A';
-    const num = parseFloat(amount);
-    if (isNaN(num)) return 'N/A';
-    const vatAmount = num * 1.15;
-    return `R ${vatAmount.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const calcVAT = (amt) => {
+    if (!amt) return '';
+    const num = parseFloat(amt);
+    if (isNaN(num)) return '';
+    return formatMoney(num * 1.15);
   };
   
-  const optionDate = lease.optionExerciseDate ? formatDateShort(lease.optionExerciseDate) : '31/08/2028';
-  
-  // Format document date
-  const formatDocumentDate = () => {
-    const now = new Date();
-    const day = String(now.getDate()).padStart(2, '0');
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const month = monthNames[now.getMonth()];
-    const year = now.getFullYear();
-    return `${day} ${month} ${year}`;
-  };
+  const y2Exists = financial.year2?.basicRent;
+  const y3Exists = financial.year3?.basicRent;
   
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lease Agreement - Part A</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
-            background: #f5f5f5;
-            padding: 20px;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-            text-rendering: optimizeLegibility;
-            line-height: 1.2;
-            font-size: 10px;
-        }
-        
-        .page {
-            max-width: 850px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px 50px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        h1 {
-            text-align: center;
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            letter-spacing: 1px;
-        }
-        
-        .document-date {
-            text-align: center;
-            font-size: 10px;
-            margin-bottom: 8px;
-            color: #333;
-        }
-        
-        h2 {
-            text-align: center;
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 12px;
-        }
-        
-        .intro {
-            text-align: center;
-            margin-bottom: 15px;
-            font-size: 11px;
-            line-height: 1.6;
-        }
-        
-        .section-title {
-            font-weight: bold;
-            margin: 0 0 2px 0 !important;
-            padding: 0 !important;
-            font-size: 10px;
-            display: block;
-            line-height: 12px !important;
-        }
-        
-        .field {
-            margin: 0 0 1px 0 !important;
-            padding: 0 !important;
-            display: block;
-            line-height: 12px !important;
-            min-height: 12px !important;
-            overflow: hidden;
-            font-size: 10px;
-            font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
-        }
-        
-        .label {
-            font-weight: bold;
-            width: 250px;
-            display: inline-block;
-            font-size: 9px;
-            text-align: left;
-            margin: 0 !important;
-            padding: 0 !important;
-            vertical-align: top;
-            line-height: 12px !important;
-            height: 12px !important;
-            font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
-        }
-        
-        .value {
-            display: inline-block;
-            font-size: 10px;
-            margin: 0 !important;
-            padding: 0 !important;
-            vertical-align: top;
-            line-height: 12px !important;
-            min-height: 12px !important;
-            font-family: 'Liberation Sans', 'LiberationSans', 'Arial', 'Helvetica', sans-serif !important;
-        }
-        
-        .subsection {
-            margin: 0 0 2px 0 !important;
-            padding: 0 !important;
-            display: block;
-        }
-        
-        .section {
-            margin: 0 0 4px 0 !important;
-            padding: 0 !important;
-            font-size: 10px;
-            page-break-inside: avoid;
-            display: block;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 8px 0;
-            font-size: 9px;
-        }
-        
-        th, td {
-            border: 1px solid #000;
-            padding: 4px;
-            text-align: center;
-        }
-        
-        th {
-            background: #f0f0f0;
-            font-weight: bold;
-        }
-        
-        .note {
-            font-size: 8px;
-            margin-top: 5px;
-            font-style: italic;
-        }
-        
-        .initial-box {
-            text-align: right;
-            font-size: 9px;
-            margin-top: 15px;
-            font-weight: bold;
-        }
-    </style>
+<meta charset="utf-8">
+<title>Lease Agreement</title>
+<style>
+  /* ===== FIXED PAGE BREAK CSS ===== */
+  @page {
+    size: A4;
+    margin: 15mm 18mm; /* top/bottom 15mm, left/right 18mm = 174mm content width */
+  }
+  
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: "Calibri", Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.3;
+    color: #000;
+  }
+  
+  /* Remove padding for print - only use @page margins */
+  .page {
+    width: 210mm;
+    margin: 0 auto;
+    box-sizing: border-box;
+    padding: 0;
+    min-height: auto;
+  }
+  
+  /* Optional: padding for screen preview only */
+  @media screen {
+    .page { padding: 1cm; }
+  }
+  
+  /* Trim margins at page boundaries */
+  .page > *:first-child { margin-top: 0 !important; }
+  .page > *:last-child { margin-bottom: 0 !important; }
+  
+  h1 {
+    text-align: center;
+    font-weight: bold;
+    font-size: 17pt;
+    margin: 0 0 10px 0;
+    letter-spacing: 0.5px;
+    width: 174mm;
+    max-width: 174mm;
+  }
+  
+  .part {
+    display: block;
+    text-align: left;
+    font-weight: bold;
+    font-size: 11pt;
+    margin: 0 0 6px 0;
+    text-decoration: underline;
+    width: 174mm !important;
+    max-width: 174mm !important;
+    box-sizing: border-box;
+  }
+  
+  .intro {
+    display: block;
+    text-align: left;
+    margin: 0 0 10px 0;
+    font-size: 11pt;
+    line-height: 1.3;
+    width: 174mm !important;
+    max-width: 174mm !important;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    box-sizing: border-box;
+  }
+  
+  /* CRITICAL: Prevent table splitting */
+  table {
+    width: 174mm;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 6px 0;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  
+  th, td {
+    border: 1px solid #000;
+    padding: 3px 4px;
+    vertical-align: top;
+    word-wrap: break-word;
+    font-size: 10pt;
+    line-height: 1.2;
+  }
+  
+  th {
+    font-weight: bold;
+    background: #ffffff;
+    text-align: center;
+  }
+  
+  .label {
+    font-weight: bold;
+  }
+  
+  .center {
+    text-align: center;
+  }
+  
+  .date-cell {
+    text-align: center;
+    white-space: nowrap !important;
+    word-wrap: normal !important;
+    overflow-wrap: normal !important;
+  }
+  
+  .note {
+    border: 1px solid #000;
+    padding: 4px 6px;
+    font-weight: bold;
+    margin: 6px 0;
+  }
+  
+  .footer {
+    text-align: right;
+    font-weight: normal;
+    margin: 8px 0 0 0;
+    font-size: 10pt;
+    width: 174mm;
+  }
+  
+  .footer strong {
+    font-weight: bold;
+  }
+  
+  /* CRITICAL: Zero-height page break */
+  .page-break {
+    page-break-after: always;
+    break-after: page;
+    display: block;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    line-height: 0;
+    font-size: 0;
+  }
+</style>
 </head>
 <body>
-    <div class="page">
-        <h1>AGREEMENT OF LEASE</h1>
-        <div class="document-date">${formatDocumentDate()}</div>
-        <h2>PART A</h2>
-        
-        <div class="intro">
-            THE PREMISES ARE HIRED BY THE TENANT FROM THE LANDLORD SUBJECT TO THE TERMS AND<br>
-            CONDITIONS SET OUT HEREIN AND IN ANY ANNEXURE HERETO:
-        </div>
-        
-        <!-- Section 1.1 - LANDLORD -->
-        <div class="section">
-            <div class="section-title">1.1 THE LANDLORD:</div>
-            <div class="subsection">
-                <div class="field">
-                    <span class="value">${landlord.name || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">TEL:</span>
-                    <span class="value">${landlord.phone || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">REGISTRATION NO:</span>
-                    <span class="value">${landlord.regNo || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">VAT REGISTRATION NO:</span>
-                    <span class="value">${landlord.vatNo || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">BANKING DETAILS:</span>
-                    <span class="value">BANK: ${landlord.bank || ''}, ${landlord.branch || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label"></span>
-                    <span class="value">A/C NO: ${landlord.accountNo || ''}, BRANCH CODE: ${landlord.branchCode || ''}</span>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Section 1.2 - TENANT -->
-        <div class="section">
-            <div class="section-title">1.2 THE TENANT:</div>
-            <div class="subsection">
-                <div class="field">
-                    <span class="value">${tenant.name || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">REGISTRATION NO:</span>
-                    <span class="value">${tenant.regNo || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">VAT REGISTRATION NO:</span>
-                    <span class="value">${tenant.vatNo || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">POSTAL:</span>
-                    <span class="value">${tenant.postalAddress || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">PHYSICAL:</span>
-                    <span class="value">${tenant.physicalAddress || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">TRADING AS:</span>
-                    <span class="value">${tenant.tradingAs || ''}</span>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Section 1.3-1.8 - PREMISES -->
-        <div class="section">
-            <div class="field">
-                <span class="label">1.3 THE PREMISES:</span>
-                <span class="value">${premises.unit || ''}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.4 BUILDING NAME:</span>
-                <span class="value">${premises.buildingName || ''}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.5 BUILDING ADDRESS:</span>
-                <span class="value">${premises.buildingAddress || ''}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.6 PREMISES MEASUREMENTS (APPROX):</span>
-                <span class="value">${premises.size || ''}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.7 TENANT'S PERCENTAGE PROPORTIONATE SHARE:</span>
-                <span class="value">${premises.percentage || ''}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.8 PERMITTED USE OF PREMISES:</span>
-                <span class="value">${premises.permittedUse || ''}</span>
-            </div>
-        </div>
-        
-        <!-- Section 1.9 & 1.10 - LEASE PERIODS TABLE (same style as 1.12) -->
-        <div class="section">
-            <table>
-                <thead>
-                    <tr>
-                        <th colspan="2">1.9 INITIAL PERIOD OF LEASE</th>
-                        <th colspan="2">1.10 OPTION PERIOD OF LEASE<br>(TO BE EXERCISED BY ${optionDate})</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <th>YEARS</th>
-                        <td>${lease.years || 0}</td>
-                        <th>YEARS</th>
-                        <td>${lease.optionYears || 0}</td>
-                    </tr>
-                    <tr>
-                        <th>MONTHS</th>
-                        <td>${lease.months || 0}</td>
-                        <th>MONTHS</th>
-                        <td>${lease.optionMonths || 0}</td>
-                    </tr>
-                    <tr>
-                        <th>COMMENCEMENT DATE</th>
-                        <td>${lease.commencementDate ? formatDateLong(lease.commencementDate) : ''}</td>
-                        <td colspan="2" style="background: #f0f0f0;"></td>
-                    </tr>
-                    <tr>
-                        <th>TERMINATION DATE</th>
-                        <td>${lease.terminationDate ? formatDateLong(lease.terminationDate) : ''}</td>
-                        <td colspan="2" style="background: #f0f0f0;"></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        
-        <!-- Section 1.11 - SURETY -->
-        <div class="section">
-            <div class="section-title">1.11 SURETY:</div>
-            <div class="subsection">
-                <div class="field">
-                    <span class="label">NAME:</span>
-                    <span class="value">${surety.name || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">ID NUMBER:</span>
-                    <span class="value">${surety.idNumber || ''}</span>
-                </div>
-                <div class="field">
-                    <span class="label">ADDRESS:</span>
-                    <span class="value">${surety.address || ''}</span>
-                </div>
-            </div>
-        </div>
-        
-        <div class="initial-box">1 INITIAL HERE: _________</div>
-        
-        <!-- Section 1.12 - RENTAL TABLE -->
-        <div class="section">
-            <div class="section-title">1.12 MONTHLY RENTAL AND OTHER MONTHLY CHARGES:</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>BASIC RENT<br>EXCL. VAT</th>
-                        <th>BASIC RENT<br>INCL. VAT</th>
-                        <th>SECURITY<br>EXCL. VAT</th>
-                        <th>ELECTRICITY<br>SEWERAGE & WATER</th>
-                        <th>REFUSE<br>(AS AT 01/06/2025)</th>
-                        <th>RATES<br>(AS AT 01/06/2025)</th>
-                        <th>FROM</th>
-                        <th>TO</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>${formatCurrency(financial.year1?.basicRent)}</td>
-                        <td>${calculateVAT(financial.year1?.basicRent)}</td>
-                        <td>${formatCurrency(financial.year1?.security)}</td>
-                        <td>${financial.year1?.sewerageWater || 'METERED OR % OF EXPENSE'}</td>
-                        <td>${financial.year1?.refuse ? formatCurrency(financial.year1.refuse) + ' p/m' : 'N/A'}</td>
-                        <td>${formatCurrency(financial.year1?.rates)}</td>
-                        <td>${financial.year1?.from ? formatDateShort(financial.year1.from) : ''}</td>
-                        <td>${financial.year1?.to ? formatDateShort(financial.year1.to) : ''}</td>
-                    </tr>
-                    ${showFinancialYear2 ? `<tr>
-                        <td>${formatCurrency(financial.year2?.basicRent)}</td>
-                        <td>${calculateVAT(financial.year2?.basicRent)}</td>
-                        <td>${formatCurrency(financial.year2?.security)}</td>
-                        <td>${financial.year2?.sewerageWater || 'METERED OR % OF EXPENSE'}</td>
-                        <td>*</td>
-                        <td>*</td>
-                        <td>${financial.year2?.from ? formatDateShort(financial.year2.from) : ''}</td>
-                        <td>${financial.year2?.to ? formatDateShort(financial.year2.to) : ''}</td>
-                    </tr>` : ''}
-                    ${showFinancialYear3 ? `<tr>
-                        <td>${formatCurrency(financial.year3?.basicRent)}</td>
-                        <td>${calculateVAT(financial.year3?.basicRent)}</td>
-                        <td>${formatCurrency(financial.year3?.security)}</td>
-                        <td>${financial.year3?.sewerageWater || 'METERED OR % OF EXPENSE'}</td>
-                        <td>*</td>
-                        <td>*</td>
-                        <td>${financial.year3?.from ? formatDateShort(financial.year3.from) : ''}</td>
-                        <td>${financial.year3?.to ? formatDateShort(financial.year3.to) : ''}</td>
-                    </tr>` : ''}
-                </tbody>
-            </table>
-            <div class="note">
-                *INCREASES AS PER RELEVANT MUNICIPAL AUTHORITY/CONTRACTOR IN RATES AND REFUSE TO APPLY ON A PROPORTIONATE BASIS.
-            </div>
-        </div>
-        
-        <!-- Remaining sections -->
-        <div class="section">
-            <div class="field">
-                <span class="label">1.13 DEPOSIT:</span>
-                <span class="value">${financial.deposit ? formatCurrency(financial.deposit) + ' – DEPOSIT HELD' : 'N/A'}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.14.1 TURNOVER PERCENTAGE:</span>
-                <span class="value">${financial.turnoverPercentage || 'N/A'}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.14.2 TENANT'S FINANCIAL YEAR END:</span>
-                <span class="value">${financial.financialYearEnd || 'N/A'}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.14.3 MINIMUM TURNOVER REQUIREMENT:</span>
-                <span class="value">${financial.minimumTurnover || 'N/A'}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.15 ADVERTISING CONTRIBUTION:</span>
-                <span class="value">${financial.advertisingContribution || 'N/A'}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.16 TENANT'S BANK ACCOUNT DETAILS:</span>
-                <span class="value">${tenant.bankName && tenant.bankAccountNumber ? `BANK: ${tenant.bankName}, A/C NO: ${tenant.bankAccountNumber}, BRANCH CODE: ${tenant.bankBranchCode || 'N/A'}` : 'N/A'}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.17 LEASE FEES PAYABLE ON SIGNATURE:</span>
-                <span class="value">${financial.leaseFee ? formatCurrency(financial.leaseFee) + ' (EXCL. VAT)' : 'N/A'}</span>
-            </div>
-            <div class="field">
-                <span class="label">1.18 ANNEXURES:</span>
-                <span class="value">"A"; "B"; "C"; "D"</span>
-            </div>
-        </div>
-        
-        <div class="initial-box">2 INITIAL HERE: _________</div>
-    </div>
+
+<!-- PAGE 1 -->
+<div class="page">
+  <h1>AGREEMENT OF LEASE</h1>
+  
+  <div class="part">PART A</div>
+  
+  <div class="intro">THE PREMISES ARE HIRED BY THE <strong>TENANT</strong> FROM THE <strong>LANDLORD</strong> SUBJECT TO THE TERMS AND CONDITIONS SET OUT HEREIN AND IN ANY ANNEXURE HERETO:</div>
+  
+  <!-- 2-column sections: 1.1 Landlord -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:92mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.1 THE LANDLORD:</td>
+      <td><strong>${landlord.name || ''}</strong><br>TEL:(${landlord.phone || ''})</td>
+    </tr>
+    <tr>
+      <td class="label">REGISTRATION NO:</td>
+      <td>${landlord.regNo || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">VAT REGISTRATION NO:</td>
+      <td>${landlord.vatNo || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">BANKING DETAILS:</td>
+      <td>BANK: ${landlord.bank || ''}, ${landlord.branch || ''}<br>A/C NO: ${landlord.accountNo || ''}, BRANCH CODE: ${landlord.branchCode || ''}</td>
+    </tr>
+  </table>
+  
+  <!-- 3-column section: 1.2 Tenant with POSTAL/PHYSICAL split -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:46mm">
+      <col style="width:46mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.2 THE TENANT:</td>
+      <td colspan="2"><strong>${tenant.name || ''}</strong></td>
+    </tr>
+    <tr>
+      <td class="label">REGISTRATION NO:</td>
+      <td colspan="2">${tenant.regNo || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">VAT REGISTRATION NO:</td>
+      <td colspan="2">${tenant.vatNo || ''}</td>
+    </tr>
+    <tr>
+      <td></td>
+      <th>POSTAL:</th>
+      <th>PHYSICAL:</th>
+    </tr>
+    <tr>
+      <td style="border-right: none;"></td>
+      <td style="border-left: 1.5px solid #000;">${tenant.postalAddress || ''}</td>
+      <td style="border-left: 1.5px solid #000;">${tenant.physicalAddress || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">TRADING AS:</td>
+      <td colspan="2">${tenant.tradingAs || tenant.name || ''}</td>
+    </tr>
+  </table>
+  
+  <!-- 2-column sections: 1.3-1.8 Premises -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:92mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.3 THE PREMISES:</td>
+      <td>${premises.unit || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">1.4 BUILDING NAME:</td>
+      <td>${premises.buildingName || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">1.5 BUILDING ADDRESS:</td>
+      <td>${premises.buildingAddress || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">1.6 PREMISES MEASUREMENTS (APPROX):</td>
+      <td>${premises.size || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">1.7 TENANT'S PERCENTAGE PROPORTIONATE SHARE<br>OF BUILDING AND/OR PROPERTY EXCLUDING<br>PARKING AND FACILITY AREAS</td>
+      <td>${premises.percentage || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">1.8 PERMITTED USE OF PREMISES:<br>TO BE USED BY THE TENANT FOR THESE PURPOSES<br>AND FOR NO OTHER PURPOSES WHATSOEVER</td>
+      <td>${premises.permittedUse || ''}</td>
+    </tr>
+  </table>
+  
+  <!-- 3-column section: 1.9 Lease Period with YEARS/MONTHS -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:46mm">
+      <col style="width:46mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.9 INITIAL PERIOD OF LEASE:</td>
+      <th>YEARS</th>
+      <th>MONTHS</th>
+    </tr>
+    <tr>
+      <td></td>
+      <td class="center"><strong>${lease.years || '0'}</strong></td>
+      <td class="center"><strong>${lease.months || '0'}</strong></td>
+    </tr>
+    <tr>
+      <td class="label">COMMENCEMENT DATE:</td>
+      <td class="center"><strong>${formatDateLong(lease.commencementDate)}</strong></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="label">TERMINATION DATE:</td>
+      <td class="center"><strong>${formatDateLong(lease.terminationDate)}</strong></td>
+      <td></td>
+    </tr>
+  </table>
+  
+  <!-- 3-column section: 1.10 Option Period -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:46mm">
+      <col style="width:46mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.10 OPTION PERIOD OF LEASE (TO BE EXERCISED<br>BY 31/08/2028) OPTION PERIOD IS TO BE MUTUALLY<br>DETERMINED BY THE PARTIES. IF BUSINESS SOLD<br>LEASE TO BE RENEWED SUBJECT TO APPROVAL OF<br>NEW TENANT BY LANDLORD.</td>
+      <th>YEARS</th>
+      <th>MONTHS</th>
+    </tr>
+    <tr>
+      <td></td>
+      <td class="center"><strong>${lease.optionYears || '0'}</strong></td>
+      <td class="center"><strong>${lease.optionMonths || '0'}</strong></td>
+    </tr>
+  </table>
+  
+  <!-- 2-column section: 1.11 Surety -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:92mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.11 SURETY</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="label">NAME:</td>
+      <td>${surety.name || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">ID NUMBER:</td>
+      <td>${surety.idNumber || ''}</td>
+    </tr>
+    <tr>
+      <td class="label">ADDRESS:</td>
+      <td>${surety.address || ''}</td>
+    </tr>
+  </table>
+  
+  <div class="footer">1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>INITIAL HERE:</strong> _______</div>
+</div>
+
+<!-- Page break -->
+<div class="page-break"></div>
+
+<!-- PAGE 2 -->
+<div class="page">
+  <!-- 1.12 - Wide 7-column table for Monthly Rental -->
+  <table>
+    <colgroup>
+      <col style="width:20mm">
+      <col style="width:20mm">
+      <col style="width:18mm">
+      <col style="width:42mm">
+      <col style="width:22mm">
+      <col style="width:26mm">
+      <col style="width:26mm">
+    </colgroup>
+    <tr>
+      <th colspan="7">1.12 MONTHLY RENTAL AND OTHER MONTHLY CHARGES.</th>
+    </tr>
+    <tr>
+      <th>BASIC RENT<br>EXCL. VAT</th>
+      <th>BASIC RENT<br>INCL. VAT</th>
+      <th>SECURITY<br>EXCL. VAT</th>
+      <th>ELECTRICITY<br>SEWERAGE & WATER<br><br>*REFUSE AS AT<br>${formatDateShort(ratesEffectiveDate)}<br>EXCL. VAT</th>
+      <th>*RATES AS AT<br>${formatDateShort(ratesEffectiveDate)}<br>EXCL. VAT</th>
+      <th>FROM</th>
+      <th>TO</th>
+    </tr>
+    <tr>
+      <td class="center">${formatMoney(financial.year1?.basicRent)}</td>
+      <td class="center">${calcVAT(financial.year1?.basicRent)}</td>
+      <td class="center">${formatMoney(financial.year1?.security)}</td>
+      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>METERED OR % AGE OF<br>EXPENSE<br><br>*REFUSE -<br>${formatMoney(financial.year1?.refuse)} p/m</td>
+      <td class="center">*${formatMoney(financial.year1?.rates)}</td>
+      <td class="date-cell">${formatDateShort(financial.year1?.from)}</td>
+      <td class="date-cell">${formatDateShort(financial.year1?.to)}</td>
+    </tr>
+    ${y2Exists ? `<tr>
+      <td class="center">${formatMoney(financial.year2.basicRent)}</td>
+      <td class="center">${calcVAT(financial.year2.basicRent)}</td>
+      <td class="center">${formatMoney(financial.year2.security)}</td>
+      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>METERED OR % AGE OF<br>EXPENSE<br><br>* REFUSE</td>
+      <td class="center">*</td>
+      <td class="date-cell">${formatDateShort(financial.year2.from)}</td>
+      <td class="date-cell">${formatDateShort(financial.year2.to)}</td>
+    </tr>` : ''}
+    ${y3Exists ? `<tr>
+      <td class="center">${formatMoney(financial.year3.basicRent)}</td>
+      <td class="center">${calcVAT(financial.year3.basicRent)}</td>
+      <td class="center">${formatMoney(financial.year3.security)}</td>
+      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>METERED OR % AGE OF<br>EXPENSE<br><br>* REFUSE</td>
+      <td class="center">*</td>
+      <td class="date-cell">${formatDateShort(financial.year3.from)}</td>
+      <td class="date-cell">${formatDateShort(financial.year3.to)}</td>
+    </tr>` : ''}
+  </table>
+  
+  <table>
+    <tr>
+      <td class="small" colspan="2"><strong>*INCREASES AS PER RELEVANT MUNICIPAL AUTHORITY/CONTRACTOR IN RATES AND REFUSE TO APPLY ON A PROPORTIONATE BASIS.</strong></td>
+    </tr>
+  </table>
+  
+  <!-- Back to 2-column: 1.13-1.18 -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:92mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.13 DEPOSIT</td>
+      <td><strong>${formatMoney(financial.deposit)}</strong> – DEPOSIT HELD.</td>
+    </tr>
+    <tr>
+      <td class="label">1.14.1 TURNOVER PERCENTAGE</td>
+      <td>${financial.turnoverPercentage || 'N/A'}</td>
+    </tr>
+    <tr>
+      <td class="label">1.14.2 TENANT'S FINANCIAL YEAR END:</td>
+      <td>${financial.financialYearEnd || 'N/A'}</td>
+    </tr>
+    <tr>
+      <td class="label">1.14.3 MINIMUM TURNOVER REQUIREMENT ESCALATING ANNUALLY</td>
+      <td>${financial.minimumTurnover || 'N/A'}</td>
+    </tr>
+    <tr>
+      <td class="label">1.15 TENANT'S ADVERTISING AND PROMOTIONAL<br>CONTRIBUTION: % AGE OF TENANT'S NET MONTHLY RENTAL<br>PLUS ATTRIBUTABLE VALUE ADDED TAX THEREON</td>
+      <td>${financial.advertisingContribution || 'N/A'}</td>
+    </tr>
+    <tr>
+      <td class="label">1.16 TENANT'S BANK ACCOUNT DETAILS:</td>
+      <td>${tenant.bankName || 'N/A'}</td>
+    </tr>
+    <tr>
+      <td class="label">1.17 THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS LEASE.(EXCL. VAT)</td>
+      <td>${formatMoney(financial.leaseFee)}</td>
+    </tr>
+    <tr>
+      <td class="label">1.18 THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A"; "B"; "C"; "D"</td>
+      <td></td>
+    </tr>
+  </table>
+  
+  <div class="footer">2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>INITIAL HERE:</strong> _______</div>
+</div>
+
 </body>
 </html>`;
 }
 
-module.exports = {
-  generateLeasePDF
-};
+module.exports = { generateLeasePDF };
