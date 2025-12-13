@@ -27,11 +27,6 @@ async function generateLeasePDF(leaseData) {
     
     const html = generateLeaseHTML(leaseData);
     
-    // Debug: Write HTML to file for inspection
-    const fs = require('fs');
-    fs.writeFileSync('debug-lease.html', html, 'utf8');
-    console.log('📝 Debug HTML written to: debug-lease.html');
-    
     // Set content with increased timeout and less strict waiting
     await page.setContent(html, { 
       waitUntil: 'domcontentloaded',
