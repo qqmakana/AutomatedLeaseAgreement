@@ -1,5 +1,5 @@
-const puppeteer = require('puppeteer');
-const fs = require('fs');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 async function generateLeasePDF(leaseData) {
   let browser;
@@ -7,20 +7,21 @@ async function generateLeasePDF(leaseData) {
     console.log('🚀 Starting PDF generation...');
     
     const isProduction = process.env.NODE_ENV === 'production';
+    
     const launchOptions = {
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      headless: chromium.headless,
+      args: isProduction 
+        ? [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox']
+        : ['--no-sandbox', '--disable-setuid-sandbox'],
+      executablePath: isProduction 
+        ? await chromium.executablePath()
+        : process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
     };
     
-    if (isProduction) {
-      const systemChromiumPaths = ['/usr/bin/chromium', '/usr/bin/chromium-browser'];
-      for (const path of systemChromiumPaths) {
-        if (fs.existsSync(path)) {
-          launchOptions.executablePath = path;
-          break;
-        }
-      }
-    }
+    console.log('🔧 Launch options:', { 
+      isProduction, 
+      executablePath: launchOptions.executablePath 
+    });
     
     browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
