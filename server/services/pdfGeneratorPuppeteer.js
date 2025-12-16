@@ -1,22 +1,29 @@
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
+// Conditionally load Puppeteer based on environment
+const isProduction = process.env.NODE_ENV === 'production';
+
+let puppeteer, chromium;
+if (isProduction) {
+  puppeteer = require('puppeteer-core');
+  chromium = require('@sparticuz/chromium');
+} else {
+  puppeteer = require('puppeteer');
+}
 
 async function generateLeasePDF(leaseData) {
   let browser;
   try {
     console.log('🚀 Starting PDF generation...');
     
-    const isProduction = process.env.NODE_ENV === 'production';
-    
-    const launchOptions = {
-      headless: chromium.headless,
-      args: isProduction 
-        ? [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox']
-        : ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: isProduction 
-        ? await chromium.executablePath()
-        : process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
-    };
+    const launchOptions = isProduction && chromium
+      ? {
+          headless: chromium.headless,
+          args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+          executablePath: await chromium.executablePath()
+        }
+      : {
+          headless: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        };
     
     console.log('🔧 Launch options:', { 
       isProduction, 
@@ -36,9 +43,10 @@ async function generateLeasePDF(leaseData) {
     
     const pdfBuffer = await page.pdf({
       format: 'A4',
-      printBackground: true,
       margin: { top: '0', right: '0', bottom: '0', left: '0' }, // Use CSS @page margins instead
-      preferCSSPageSize: true
+      printBackground: true,
+      preferCSSPageSize: true,
+      scale: 1
     });
     
     await browser.close();
@@ -84,6 +92,13 @@ function generateLeaseHTML(data) {
     return formatMoney(num * 1.15);
   };
   
+  // Format address with line breaks (split by comma or newline)
+  const formatAddress = (addr) => {
+    if (!addr) return '';
+    // Split by comma, newline, or " , " and join with <br>
+    return addr.split(/[,\n]+/).map(part => part.trim()).filter(part => part).join('<br>');
+  };
+  
   const y2Exists = financial.year2?.basicRent;
   const y3Exists = financial.year3?.basicRent;
   
@@ -93,27 +108,27 @@ function generateLeaseHTML(data) {
 <meta charset="utf-8">
 <title>Lease Agreement</title>
 <style>
-  /* ===== FIXED PAGE BREAK CSS ===== */
+  /* ===== A4 PAGE WITH EXTREME EDGE MARGINS ===== */
   @page {
     size: A4;
-    margin: 15mm 18mm; /* top/bottom 15mm, left/right 18mm = 174mm content width */
+    margin: 0.25cm; /* Extreme edge margins - absolute maximum width */
   }
   
   html, body {
     margin: 0;
     padding: 0;
-    font-family: "Calibri", Arial, sans-serif;
-    font-size: 11pt;
-    line-height: 1.3;
+    font-family: Arial, sans-serif;
+    font-size: 9pt;
+    line-height: 1.15;
     color: #000;
   }
   
-  /* Remove padding for print - only use @page margins */
+  /* Lock content to exact usable width */
   .page {
-    width: 210mm;
-    margin: 0 auto;
+    width: 204mm;       /* EXTREME MAXIMUM width - 0.25cm equal margins on both sides */
+    margin: 0 auto;     /* center at 105mm - vertical center line stays perfectly centered */
     box-sizing: border-box;
-    padding: 0;
+    padding: 0;         /* avoid double spacing at breaks */
     min-height: auto;
   }
   
@@ -126,36 +141,34 @@ function generateLeaseHTML(data) {
   .page > *:first-child { margin-top: 0 !important; }
   .page > *:last-child { margin-bottom: 0 !important; }
   
-  h1 {
+  h1.title {
     text-align: center;
-    font-weight: bold;
-    font-size: 17pt;
-    margin: 0 0 10px 0;
-    letter-spacing: 0.5px;
-    width: 174mm;
-    max-width: 174mm;
+    font-weight: 700;
+    font-size: 12pt;
+    margin-top: 50px;
+    margin-bottom: 20px;
+    letter-spacing: 0.2px;
   }
   
   .part {
     display: block;
     text-align: left;
-    font-weight: bold;
-    font-size: 11pt;
-    margin: 0 0 6px 0;
+    font-weight: 700;
+    font-size: 9pt;
     text-decoration: underline;
-    width: 174mm !important;
-    max-width: 174mm !important;
-    box-sizing: border-box;
+    margin: 0 0 10px 0;
+    padding-left: 50px; /* About 7-8 character spaces from edge */
   }
   
   .intro {
     display: block;
     text-align: left;
+    font-size: 9pt;
+    line-height: 1.4;
     margin: 0 0 10px 0;
-    font-size: 11pt;
-    line-height: 1.3;
-    width: 174mm !important;
-    max-width: 174mm !important;
+    padding-left: 50px; /* About 7-8 character spaces from edge */
+    text-transform: none;
+    text-indent: 0;
     word-wrap: break-word;
     overflow-wrap: break-word;
     white-space: normal;
@@ -164,31 +177,78 @@ function generateLeaseHTML(data) {
   
   /* CRITICAL: Prevent table splitting */
   table {
-    width: 174mm;
+    width: 100%; /* Fill the form width */
     border-collapse: collapse;
-    table-layout: fixed;
-    margin: 6px 0;
+    table-layout: fixed; /* Stable column widths */
+    margin: 0;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
   
+  /* Remove double borders where tables join */
+  table + table {
+    margin-top: -2px; /* Overlap borders to prevent doubling */
+  }
+  
   th, td {
-    border: 1px solid #000;
-    padding: 3px 4px;
+    border: 2px solid #000;
+    padding: 2px 3px;
     vertical-align: top;
     word-wrap: break-word;
-    font-size: 10pt;
-    line-height: 1.2;
+    font-size: 9pt;
+    line-height: 1.15;
+    font-weight: normal;
+  }
+  
+  /* Nested tables - consistent borders */
+  td table {
+    border: none !important;
+    border-collapse: collapse !important;
+  }
+  td table th,
+  td table td {
+    padding: 2px 3px;
+    border: none !important;
+  }
+  /* Center vertical lines in nested tables */
+  td table th:first-child,
+  td table td:first-child {
+    border-right: 2px solid #000 !important;
   }
   
   th {
-    font-weight: bold;
     background: #ffffff;
     text-align: center;
+    font-weight: normal;
   }
   
-  .label {
-    font-weight: bold;
+  /* Allow bold tags to work inside th and td elements */
+  th b, td b {
+    font-weight: bold !important;
+  }
+  
+  td.label, th.label, .label {
+    font-size: 9pt !important;
+    font-family: Arial, sans-serif !important;
+    font-weight: normal;
+  }
+  
+  /* No hanging indent - let text wrap naturally */
+  td.label {
+    /* Hanging indent removed - not working properly in PDF renderer */
+  }
+  
+  td.value {
+    font-weight: normal;
+    font-size: 9pt;
+  }
+  
+  /* Column ratios managed via colgroup in HTML:
+     2-column: 75mm (32%) + 84mm (68%) = 159mm
+     3-column: 75mm + 42mm + 42mm = 159mm */
+  
+  strong, b {
+    font-weight: 700 !important;
   }
   
   .center {
@@ -203,7 +263,7 @@ function generateLeaseHTML(data) {
   }
   
   .note {
-    border: 1px solid #000;
+    border: 1.5px solid #000;
     padding: 4px 6px;
     font-weight: bold;
     margin: 6px 0;
@@ -211,14 +271,9 @@ function generateLeaseHTML(data) {
   
   .footer {
     text-align: right;
-    font-weight: normal;
-    margin: 8px 0 0 0;
-    font-size: 10pt;
-    width: 174mm;
-  }
-  
-  .footer strong {
     font-weight: bold;
+    margin: 3pt 0 0 0;
+    font-size: 9pt;
   }
   
   /* CRITICAL: Zero-height page break */
@@ -239,176 +294,185 @@ function generateLeaseHTML(data) {
 
 <!-- PAGE 1 -->
 <div class="page">
-  <h1>AGREEMENT OF LEASE</h1>
+  <h1 class="title">AGREEMENT OF LEASE</h1>
   
   <div class="part">PART A</div>
   
-  <div class="intro">THE PREMISES ARE HIRED BY THE <strong>TENANT</strong> FROM THE <strong>LANDLORD</strong> SUBJECT TO THE TERMS AND CONDITIONS SET OUT HEREIN AND IN ANY ANNEXURE HERETO:</div>
+  <div class="intro">THE PREMISES ARE HIRED BY THE <b>TENANT</b> FROM THE <b>LANDLORD</b> SUBJECT TO THE TERMS AND<br>CONDITIONS SET OUT HEREIN AND IN ANY ANNEXURE HERETO:</div>
   
-  <!-- 2-column sections: 1.1 Landlord -->
+  <!-- 2-column sections: 1.1 Landlord (50/50 split) -->
   <table>
     <colgroup>
-      <col style="width:82mm">
-      <col style="width:92mm">
+      <col style="width:50%">
+      <col style="width:50%">
     </colgroup>
     <tr>
-      <td class="label">1.1 THE LANDLORD:</td>
-      <td><strong>${landlord.name || ''}</strong><br>TEL:(${landlord.phone || ''})</td>
+      <td class="label"><b>1.1 THE LANDLORD:</b></td>
+      <td><b>${landlord.name || ''}</b><br>TEL:(${landlord.phone || ''})</td>
     </tr>
     <tr>
-      <td class="label">REGISTRATION NO:</td>
+      <td>REGISTRATION NO:</td>
       <td>${landlord.regNo || ''}</td>
     </tr>
     <tr>
-      <td class="label">VAT REGISTRATION NO:</td>
+      <td>VAT REGISTRATION NO:</td>
       <td>${landlord.vatNo || ''}</td>
     </tr>
     <tr>
-      <td class="label">BANKING DETAILS:</td>
+      <td>BANKING DETAILS:</td>
       <td>BANK: ${landlord.bank || ''}, ${landlord.branch || ''}<br>A/C NO: ${landlord.accountNo || ''}, BRANCH CODE: ${landlord.branchCode || ''}</td>
     </tr>
   </table>
   
-  <!-- 3-column section: 1.2 Tenant with POSTAL/PHYSICAL split -->
+  <!-- 2-column section: 1.2 Tenant (50/50 split) -->
   <table>
     <colgroup>
-      <col style="width:82mm">
-      <col style="width:46mm">
-      <col style="width:46mm">
+      <col style="width:50%">
+      <col style="width:50%">
     </colgroup>
     <tr>
-      <td class="label">1.2 THE TENANT:</td>
-      <td colspan="2"><strong>${tenant.name || ''}</strong></td>
+      <td class="label"><b>1.2 THE TENANT:</b></td>
+      <td>${tenant.name || ''}</td>
     </tr>
     <tr>
-      <td class="label">REGISTRATION NO:</td>
-      <td colspan="2">${tenant.regNo || ''}</td>
+      <td>REGISTRATION NO:</td>
+      <td>${tenant.regNo || ''}</td>
     </tr>
     <tr>
-      <td class="label">VAT REGISTRATION NO:</td>
-      <td colspan="2">${tenant.vatNo || ''}</td>
+      <td>VAT REGISTRATION NO:</td>
+      <td>${tenant.vatNo || ''}</td>
+    </tr>
+  </table>
+  <!-- 1.2 POSTAL/PHYSICAL Address section (3-column layout) -->
+  <table>
+    <colgroup>
+      <col style="width:50%">
+      <col style="width:25%">
+      <col style="width:25%">
+    </colgroup>
+    <tr>
+      <td class="label" rowspan="2"></td>
+      <th style="text-align:center; border-bottom: 2px solid #000;">POSTAL:</th>
+      <th style="text-align:center; border-bottom: 2px solid #000;">PHYSICAL:</th>
     </tr>
     <tr>
-      <td></td>
-      <th>POSTAL:</th>
-      <th>PHYSICAL:</th>
+      <td style="vertical-align:top;">${formatAddress(tenant.postalAddress)}</td>
+      <td style="vertical-align:top;">${formatAddress(tenant.physicalAddress)}</td>
     </tr>
+  </table>
+  <!-- Continue 1.2 -->
+  <table>
+    <colgroup>
+      <col style="width:50%">
+      <col style="width:50%">
+    </colgroup>
     <tr>
-      <td style="border-right: none;"></td>
-      <td style="border-left: 1.5px solid #000;">${tenant.postalAddress || ''}</td>
-      <td style="border-left: 1.5px solid #000;">${tenant.physicalAddress || ''}</td>
-    </tr>
-    <tr>
-      <td class="label">TRADING AS:</td>
-      <td colspan="2">${tenant.tradingAs || tenant.name || ''}</td>
+      <td class="label"><b>TRADING AS:</b></td>
+      <td>${tenant.tradingAs || tenant.name || ''}</td>
     </tr>
   </table>
   
-  <!-- 2-column sections: 1.3-1.8 Premises -->
+  <!-- 2-column sections: 1.3-1.8 Premises (50/50 split) -->
   <table>
     <colgroup>
-      <col style="width:82mm">
-      <col style="width:92mm">
+      <col style="width:50%">
+      <col style="width:50%">
     </colgroup>
     <tr>
-      <td class="label">1.3 THE PREMISES:</td>
+      <td class="label"><b>1.3</b> THE PREMISES:</td>
       <td>${premises.unit || ''}</td>
     </tr>
     <tr>
-      <td class="label">1.4 BUILDING NAME:</td>
+      <td class="label"><b>1.4</b> BUILDING NAME:</td>
       <td>${premises.buildingName || ''}</td>
     </tr>
     <tr>
-      <td class="label">1.5 BUILDING ADDRESS:</td>
+      <td class="label"><b>1.5</b> BUILDING ADDRESS:</td>
       <td>${premises.buildingAddress || ''}</td>
     </tr>
     <tr>
-      <td class="label">1.6 PREMISES MEASUREMENTS (APPROX):</td>
-      <td>${premises.size || ''}</td>
+      <td class="label"><b>1.6</b> PREMISES MEASUREMENTS (APPROX):</td>
+      <td>${premises.size || ''}m²</td>
     </tr>
     <tr>
-      <td class="label">1.7 TENANT'S PERCENTAGE PROPORTIONATE SHARE<br>OF BUILDING AND/OR PROPERTY EXCLUDING<br>PARKING AND FACILITY AREAS</td>
-      <td>${premises.percentage || ''}</td>
+      <td class="label"><b>1.7</b> TENANT'S PERCENTAGE PROPORTIONATE SHARE<br>OF BUILDING AND/OR PROPERTY EXCLUDING<br>PARKING AND FACILITY AREAS</td>
+      <td>${premises.percentage || ''}%</td>
     </tr>
     <tr>
-      <td class="label">1.8 PERMITTED USE OF PREMISES:<br>TO BE USED BY THE TENANT FOR THESE PURPOSES<br>AND FOR NO OTHER PURPOSES WHATSOEVER</td>
+      <td class="label"><b>1.8</b> PERMITTED USE OF PREMISES:<br>TO BE USED BY THE TENANT FOR THESE PURPOSES<br>AND FOR NO OTHER PURPOSES WHATSOEVER</td>
       <td>${premises.permittedUse || ''}</td>
     </tr>
   </table>
   
-  <!-- 3-column section: 1.9 Lease Period with YEARS/MONTHS -->
+  <!-- 2-column section: 1.9 Lease Period (50/50 split) -->
   <table>
     <colgroup>
-      <col style="width:82mm">
-      <col style="width:46mm">
-      <col style="width:46mm">
+      <col style="width:50%">
+      <col style="width:25%">
+      <col style="width:25%">
     </colgroup>
     <tr>
-      <td class="label">1.9 INITIAL PERIOD OF LEASE:</td>
-      <th>YEARS</th>
-      <th>MONTHS</th>
+      <td class="label" rowspan="2"><b>1.9</b> INITIAL PERIOD OF LEASE:</td>
+      <th style="text-align:center; border-bottom: 2px solid #000;">YEARS</th>
+      <th style="text-align:center; border-bottom: 2px solid #000;">MONTHS</th>
     </tr>
     <tr>
-      <td></td>
-      <td class="center"><strong>${lease.years || '0'}</strong></td>
-      <td class="center"><strong>${lease.months || '0'}</strong></td>
+      <td class="center">${lease.years || '0'}</td>
+      <td class="center">${lease.months || '0'}</td>
     </tr>
     <tr>
-      <td class="label">COMMENCEMENT DATE:</td>
-      <td class="center"><strong>${formatDateLong(lease.commencementDate)}</strong></td>
-      <td></td>
+      <td style="padding-left: 24px;">COMMENCEMENT DATE:</td>
+      <td colspan="2">${formatDateLong(lease.commencementDate)}</td>
     </tr>
     <tr>
-      <td class="label">TERMINATION DATE:</td>
-      <td class="center"><strong>${formatDateLong(lease.terminationDate)}</strong></td>
-      <td></td>
+      <td style="padding-left: 24px;">TERMINATION DATE:</td>
+      <td colspan="2">${formatDateLong(lease.terminationDate)}</td>
     </tr>
   </table>
   
-  <!-- 3-column section: 1.10 Option Period -->
+  <!-- 2-column section: 1.10 Option Period (50/50 split) -->
   <table>
     <colgroup>
-      <col style="width:82mm">
-      <col style="width:46mm">
-      <col style="width:46mm">
+      <col style="width:50%">
+      <col style="width:25%">
+      <col style="width:25%">
     </colgroup>
     <tr>
-      <td class="label">1.10 OPTION PERIOD OF LEASE (TO BE EXERCISED<br>BY 31/08/2028) OPTION PERIOD IS TO BE MUTUALLY<br>DETERMINED BY THE PARTIES. IF BUSINESS SOLD<br>LEASE TO BE RENEWED SUBJECT TO APPROVAL OF<br>NEW TENANT BY LANDLORD.</td>
-      <th>YEARS</th>
-      <th>MONTHS</th>
+      <td class="label" rowspan="2" style="vertical-align: top;"><b>1.10</b> OPTION PERIOD OF LEASE (TO BE EXERCISED<br>BY 31/08/2028) OPTION PERIOD IS TO BE MUTUALLY<br>DETERMINED BY THE PARTIES. IF BUSINESS SOLD<br>LEASE TO BE RENEWED SUBJECT TO APPROVAL OF<br>NEW TENANT BY LANDLORD.</td>
+      <th style="text-align:center;">YEARS</th>
+      <th style="text-align:center;">MONTHS</th>
     </tr>
     <tr>
-      <td></td>
-      <td class="center"><strong>${lease.optionYears || '0'}</strong></td>
-      <td class="center"><strong>${lease.optionMonths || '0'}</strong></td>
+      <td class="center">${lease.optionYears || '0'}</td>
+      <td class="center">${lease.optionMonths || '0'}</td>
     </tr>
   </table>
   
-  <!-- 2-column section: 1.11 Surety -->
+  <!-- 2-column section: 1.11 Surety (50/50 split) -->
   <table>
     <colgroup>
-      <col style="width:82mm">
-      <col style="width:92mm">
+      <col style="width:50%">
+      <col style="width:50%">
     </colgroup>
     <tr>
-      <td class="label">1.11 SURETY</td>
+      <td class="label"><b>1.11</b> SURETY</td>
       <td></td>
     </tr>
     <tr>
-      <td class="label">NAME:</td>
+      <td style="padding-left: 28px;">NAME:</td>
       <td>${surety.name || ''}</td>
     </tr>
     <tr>
-      <td class="label">ID NUMBER:</td>
+      <td style="padding-left: 28px;">ID NUMBER:</td>
       <td>${surety.idNumber || ''}</td>
     </tr>
     <tr>
-      <td class="label">ADDRESS:</td>
+      <td style="padding-left: 28px;">ADDRESS:</td>
       <td>${surety.address || ''}</td>
     </tr>
   </table>
   
-  <div class="footer">1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>INITIAL HERE:</strong> _______</div>
+  <div class="footer">1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INITIAL HERE: _______</div>
 </div>
 
 <!-- Page break -->
@@ -419,23 +483,23 @@ function generateLeaseHTML(data) {
   <!-- 1.12 - Wide 7-column table for Monthly Rental -->
   <table>
     <colgroup>
-      <col style="width:20mm">
-      <col style="width:20mm">
-      <col style="width:18mm">
-      <col style="width:42mm">
-      <col style="width:22mm">
-      <col style="width:26mm">
-      <col style="width:26mm">
+      <col style="width:12%">
+      <col style="width:12%">
+      <col style="width:11%">
+      <col style="width:26%">
+      <col style="width:13%">
+      <col style="width:13%">
+      <col style="width:13%">
     </colgroup>
     <tr>
-      <th colspan="7">1.12 MONTHLY RENTAL AND OTHER MONTHLY CHARGES.</th>
+      <th colspan="7" style="text-align: left;"><b>1.12 MONTHLY RENTAL AND OTHER MONTHLY CHARGES.</b></th>
     </tr>
     <tr>
       <th>BASIC RENT<br>EXCL. VAT</th>
       <th>BASIC RENT<br>INCL. VAT</th>
       <th>SECURITY<br>EXCL. VAT</th>
-      <th>ELECTRICITY<br>SEWERAGE & WATER<br><br>*REFUSE AS AT<br>${formatDateShort(ratesEffectiveDate)}<br>EXCL. VAT</th>
-      <th>*RATES AS AT<br>${formatDateShort(ratesEffectiveDate)}<br>EXCL. VAT</th>
+      <th>ELECTRICITY<br>SEWERAGE & WATER<br><br><b>*REFUSE AS AT<br>${formatDateShort(ratesEffectiveDate)}<br>EXCL. VAT</b></th>
+      <th><b>*RATES AS AT<br>${formatDateShort(ratesEffectiveDate)}<br>EXCL. VAT</b></th>
       <th>FROM</th>
       <th>TO</th>
     </tr>
@@ -470,51 +534,73 @@ function generateLeaseHTML(data) {
   
   <table>
     <tr>
-      <td class="small" colspan="2"><strong>*INCREASES AS PER RELEVANT MUNICIPAL AUTHORITY/CONTRACTOR IN RATES AND REFUSE TO APPLY ON A PROPORTIONATE BASIS.</strong></td>
+      <td class="small" colspan="2"><b>*INCREASES AS PER RELEVANT MUNICIPAL AUTHORITY/CONTRACTOR IN RATES AND REFUSE TO APPLY ON A PROPORTIONATE BASIS.</b></td>
     </tr>
   </table>
   
-  <!-- Back to 2-column: 1.13-1.18 -->
+  <!-- Back to 2-column: 1.13-1.14.3 (50/50 split) -->
   <table>
     <colgroup>
-      <col style="width:82mm">
-      <col style="width:92mm">
+      <col style="width:50%">
+      <col style="width:50%">
     </colgroup>
     <tr>
-      <td class="label">1.13 DEPOSIT</td>
-      <td><strong>${formatMoney(financial.deposit)}</strong> – DEPOSIT HELD.</td>
+      <td class="label"><b>1.13 DEPOSIT -</b></td>
+      <td><b>${formatMoney(financial.deposit)} – DEPOSIT HELD.</b></td>
     </tr>
     <tr>
-      <td class="label">1.14.1 TURNOVER PERCENTAGE</td>
+      <td class="label"><b>1.14.1</b> TURNOVER PERCENTAGE</td>
       <td>${financial.turnoverPercentage || 'N/A'}</td>
     </tr>
     <tr>
-      <td class="label">1.14.2 TENANT'S FINANCIAL YEAR END:</td>
+      <td class="label"><b>1.14.2</b> TENANT'S FINANCIAL YEAR END:</td>
       <td>${financial.financialYearEnd || 'N/A'}</td>
     </tr>
     <tr>
-      <td class="label">1.14.3 MINIMUM TURNOVER REQUIREMENT ESCALATING ANNUALLY</td>
+      <td class="label"><b>1.14.3</b> MINIMUM TURNOVER REQUIREMENT ESCALATING ANNUALLY</td>
       <td>${financial.minimumTurnover || 'N/A'}</td>
-    </tr>
-    <tr>
-      <td class="label">1.15 TENANT'S ADVERTISING AND PROMOTIONAL<br>CONTRIBUTION: % AGE OF TENANT'S NET MONTHLY RENTAL<br>PLUS ATTRIBUTABLE VALUE ADDED TAX THEREON</td>
-      <td>${financial.advertisingContribution || 'N/A'}</td>
-    </tr>
-    <tr>
-      <td class="label">1.16 TENANT'S BANK ACCOUNT DETAILS:</td>
-      <td>${tenant.bankName || 'N/A'}</td>
-    </tr>
-    <tr>
-      <td class="label">1.17 THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS LEASE.(EXCL. VAT)</td>
-      <td>${formatMoney(financial.leaseFee)}</td>
-    </tr>
-    <tr>
-      <td class="label">1.18 THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A"; "B"; "C"; "D"</td>
-      <td></td>
     </tr>
   </table>
   
-  <div class="footer">2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>INITIAL HERE:</strong> _______</div>
+  <!-- 1.15 (50/50 split - 3 lines matching original) -->
+  <table>
+    <colgroup>
+      <col style="width:50%">
+      <col style="width:50%">
+    </colgroup>
+    <tr>
+      <td class="label"><b>1.15</b> TENANT'S ADVERTISING AND PROMOTIONAL<br>CONTRIBUTION: % AGE OF TENANT'S NET MONTHLY RENTAL<br>PLUS ATTRIBUTABLE VALUE ADDED TAX THEREON</td>
+      <td>${financial.advertisingContribution || 'N/A'}</td>
+    </tr>
+  </table>
+  
+  <!-- 1.16 (Full width - no dividing line) -->
+  <table>
+    <tr>
+      <td class="label"><b>1.16</b> TENANT'S BANK ACCOUNT DETAILS: ${tenant.bankName || 'N/A'}</td>
+    </tr>
+  </table>
+  
+  <!-- 1.17 (75/25 split - line 1 is 84 chars, needs wide column) -->
+  <table>
+    <colgroup>
+      <col style="width:75%">
+      <col style="width:25%">
+    </colgroup>
+    <tr>
+      <td class="label"><b>1.17</b> THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS<br>LEASE.(EXCL. VAT)</td>
+      <td>${formatMoney(financial.leaseFee)}</td>
+    </tr>
+  </table>
+  
+  <!-- 1.18 (Full width - no dividing line) -->
+  <table>
+    <tr>
+      <td class="label"><b>1.18</b> THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A";"B";"C";"D"</td>
+    </tr>
+  </table>
+  
+  <div class="footer">2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INITIAL HERE: _______</div>
 </div>
 
 </body>

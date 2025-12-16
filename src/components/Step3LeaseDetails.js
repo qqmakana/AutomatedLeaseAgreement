@@ -172,32 +172,38 @@ const Step3LeaseDetails = ({ leaseDetails, setLeaseDetails, tenantData, onNext, 
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label htmlFor="monthlyRent">Monthly Rent (ZAR) *</label>
-            <input
-              type="number"
-              id="monthlyRent"
-              name="monthlyRent"
-              value={leaseDetails.monthlyRent}
-              onChange={handleChange}
-              placeholder="0.00"
-              min="0"
-              step="0.01"
-              required
-            />
+            <label htmlFor="monthlyRent">Monthly Rent *</label>
+            <div className="input-with-symbol">
+              <span className="input-symbol">R</span>
+              <input
+                type="number"
+                id="monthlyRent"
+                name="monthlyRent"
+                value={leaseDetails.monthlyRent}
+                onChange={handleChange}
+                placeholder="0.00"
+                min="0"
+                step="0.01"
+                required
+              />
+            </div>
           </div>
           <div className="form-group">
-            <label htmlFor="securityDeposit">Security Deposit (ZAR) *</label>
-            <input
-              type="number"
-              id="securityDeposit"
-              name="securityDeposit"
-              value={leaseDetails.securityDeposit}
-              onChange={handleChange}
-              placeholder="0.00"
-              min="0"
-              step="0.01"
-              required
-            />
+            <label htmlFor="securityDeposit">Security Deposit *</label>
+            <div className="input-with-symbol">
+              <span className="input-symbol">R</span>
+              <input
+                type="number"
+                id="securityDeposit"
+                name="securityDeposit"
+                value={leaseDetails.securityDeposit}
+                onChange={handleChange}
+                placeholder="0.00"
+                min="0"
+                step="0.01"
+                required
+              />
+            </div>
           </div>
         </div>
       </div>

@@ -441,8 +441,11 @@ router.post('/generate-pdf', async (req, res) => {
     
     console.log('📋 TENANT DATA:', JSON.stringify(leaseData.tenant, null, 2));
     console.log('📋 LANDLORD DATA:', JSON.stringify(leaseData.landlord, null, 2));
+    console.log('📋 FULL LEASE DATA:', JSON.stringify(leaseData, null, 2));
 
+    console.log('🚀 Calling generateLeasePDF...');
     const pdfBuffer = await generateLeasePDF(leaseData);
+    console.log('✅ generateLeasePDF completed');
     console.log('✅ PDF generated successfully, size:', pdfBuffer.length, 'bytes');
 
     // Verify PDF buffer is valid
@@ -479,8 +482,15 @@ router.post('/generate-pdf', async (req, res) => {
     res.end(buffer, 'binary');
   } catch (error) {
     console.error('❌ Generate PDF error:', error);
+    console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Failed to generate PDF', details: error.message });
+    console.error('Error name:', error.name);
+    if (error.code) console.error('Error code:', error.code);
+    res.status(500).json({ 
+      error: 'Failed to generate PDF', 
+      details: error.message,
+      stack: error.stack 
+    });
   }
 });
 

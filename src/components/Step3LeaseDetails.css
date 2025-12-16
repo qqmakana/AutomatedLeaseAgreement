@@ -18,6 +18,47 @@
   font-size: 1.3em;
 }
 
+/* Input with symbol styling */
+.input-with-symbol {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-symbol .input-symbol {
+  position: absolute;
+  left: 12px;
+  color: #666;
+  font-weight: 600;
+  font-size: 14px;
+  z-index: 1;
+}
+
+.input-with-symbol input {
+  padding-left: 30px !important;
+  width: 100%;
+}
+
+.input-with-symbol-right {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-symbol-right .input-symbol {
+  position: absolute;
+  right: 12px;
+  color: #666;
+  font-weight: 600;
+  font-size: 14px;
+  z-index: 1;
+}
+
+.input-with-symbol-right input {
+  padding-right: 40px !important;
+  width: 100%;
+}
+
 
 
 
