@@ -417,16 +417,16 @@ function generateLeaseHTML(data) {
       <th style="text-align:center; border-bottom: 2px solid #000;">MONTHS</th>
     </tr>
     <tr>
-      <td class="center">${lease.years || '0'}</td>
-      <td class="center">${lease.months || '0'}</td>
+      <td class="center">${String(lease.years ?? '0')}</td>
+      <td class="center">${String(lease.months ?? '0')}</td>
     </tr>
     <tr>
       <td style="padding-left: 24px;">COMMENCEMENT DATE:</td>
-      <td colspan="2">${formatDateLong(lease.commencementDate)}</td>
+      <td colspan="2" style="text-align: left; padding-left: 3px;">${formatDateLong(lease.commencementDate)}</td>
     </tr>
     <tr>
       <td style="padding-left: 24px;">TERMINATION DATE:</td>
-      <td colspan="2">${formatDateLong(lease.terminationDate)}</td>
+      <td colspan="2" style="text-align: left; padding-left: 3px;">${formatDateLong(lease.terminationDate)}</td>
     </tr>
   </table>
   
@@ -443,8 +443,8 @@ function generateLeaseHTML(data) {
       <th style="text-align:center;">MONTHS</th>
     </tr>
     <tr>
-      <td class="center">${lease.optionYears || '0'}</td>
-      <td class="center">${lease.optionMonths || '0'}</td>
+      <td class="center">${String(lease.optionYears ?? '0')}</td>
+      <td class="center">${String(lease.optionMonths ?? '0')}</td>
     </tr>
   </table>
   

@@ -19,8 +19,10 @@ const {
 
 async function generateLeaseWord(leaseData) {
   console.log('📄 Starting Word document generation...');
+  console.log('📋 Full leaseData received:', JSON.stringify(leaseData, null, 2));
   
   const { landlord = {}, tenant = {}, premises = {}, lease = {}, financial = {}, surety = {} } = leaseData || {};
+  console.log('📋 Lease object:', JSON.stringify(lease, null, 2));
   
   // Get rates effective date (defaults to 01/06/2025 if not provided)
   const ratesEffectiveDate = financial.ratesEffectiveDate || '2025-06-01';
@@ -350,8 +352,8 @@ async function generateLeaseWord(leaseData) {
               }),
               new TableRow({
                 children: [
-                  centeredCell(lease.years || '0'),
-                  centeredCell(lease.months || '0'),
+                  centeredCell(String(lease.years ?? '0')),
+                  centeredCell(String(lease.months ?? '0')),
                 ],
               }),
               new TableRow({
@@ -364,7 +366,16 @@ async function generateLeaseWord(leaseData) {
                     })],
                     borders,
                   }),
-                  centeredCell(formatDateLong(lease.commencementDate), { colSpan: 2 }),
+                  new TableCell({
+                    children: [new Paragraph({ 
+                      children: [text(formatDateLong(lease.commencementDate))],
+                      alignment: AlignmentType.LEFT,
+                      spacing: { before: 20, after: 20 },
+                      indent: { left: 50 }
+                    })],
+                    borders,
+                    columnSpan: 2,
+                  }),
                 ],
               }),
               new TableRow({
@@ -377,7 +388,16 @@ async function generateLeaseWord(leaseData) {
                     })],
                     borders,
                   }),
-                  centeredCell(formatDateLong(lease.terminationDate), { colSpan: 2 }),
+                  new TableCell({
+                    children: [new Paragraph({ 
+                      children: [text(formatDateLong(lease.terminationDate))],
+                      alignment: AlignmentType.LEFT,
+                      spacing: { before: 20, after: 20 },
+                      indent: { left: 50 }
+                    })],
+                    borders,
+                    columnSpan: 2,
+                  }),
                 ],
               }),
             ],
@@ -409,8 +429,8 @@ async function generateLeaseWord(leaseData) {
               }),
               new TableRow({
                 children: [
-                  centeredCell(lease.optionYears || '0'),
-                  centeredCell(lease.optionMonths || '0'),
+                  centeredCell(String(lease.optionYears ?? '0')),
+                  centeredCell(String(lease.optionMonths ?? '0')),
                 ],
               }),
             ],
