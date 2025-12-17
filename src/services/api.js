@@ -236,6 +236,37 @@ export const leasesAPI = {
     // Return the blob
     return blob;
   },
+
+  generateWordFromData: async (extractedData) => {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    const response = await fetch(`${API_BASE_URL}/leases/generate-word`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(extractedData),
+    });
+
+    if (!response.ok) {
+      let errorMessage = 'Word generation failed';
+      try {
+        const error = await response.json();
+        errorMessage = error.error || errorMessage;
+      } catch (e) {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const blob = await response.blob();
+    
+    if (blob.size === 0) {
+      throw new Error('Word document blob is empty');
+    }
+    
+    return blob;
+  },
 };
 
 export { getAuthToken, setAuthToken, removeAuthToken };

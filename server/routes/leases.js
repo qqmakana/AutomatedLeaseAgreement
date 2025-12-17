@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('./auth');
 const { generateLeasePDF } = require('../services/pdfGeneratorPuppeteer');
+const { generateLeaseWord } = require('../services/wordGenerator');
 const { getPrisma } = require('../utils/prisma');
 
 // TEST ENDPOINT: Generate PDF with sample data (NO AUTH - MUST BE FIRST)
@@ -488,6 +489,66 @@ router.post('/generate-pdf', async (req, res) => {
     if (error.code) console.error('Error code:', error.code);
     res.status(500).json({ 
       error: 'Failed to generate PDF', 
+      details: error.message,
+      stack: error.stack 
+    });
+  }
+});
+
+// Generate Word document from full lease data (POST endpoint - accepts extractedData structure)
+router.post('/generate-word', async (req, res) => {
+  try {
+    console.log('📄 Word generation request received');
+    
+    let leaseData = req.body;
+    
+    // If ficaText is provided, extract tenant data and merge with other details
+    if (req.body.ficaText && typeof req.body.ficaText === 'string') {
+      console.log('📝 FICA text provided, extracting tenant data...');
+      const extractedData = extractFromFICA(req.body.ficaText);
+      
+      // Merge extracted tenant data with provided landlord/premises/lease/financial
+      leaseData = {
+        tenant: extractedData.tenant,
+        landlord: req.body.landlord || {},
+        surety: req.body.surety || {},
+        premises: req.body.premises || {},
+        lease: req.body.lease || extractedData.lease,
+        financial: req.body.financial || extractedData.financial
+      };
+    }
+    
+    if (!leaseData) {
+      console.error('❌ No lease data provided');
+      return res.status(400).json({ error: 'Lease data is required' });
+    }
+
+    console.log('🚀 Calling generateLeaseWord...');
+    const wordBuffer = await generateLeaseWord(leaseData);
+    console.log('✅ Word document generated successfully, size:', wordBuffer.length, 'bytes');
+
+    // Verify buffer is valid
+    if (!wordBuffer || wordBuffer.length === 0) {
+      throw new Error('Generated Word buffer is empty');
+    }
+    
+    const buffer = Buffer.isBuffer(wordBuffer) ? wordBuffer : Buffer.from(wordBuffer);
+    
+    res.writeHead(200, {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Length': buffer.length,
+      'Content-Disposition': `attachment; filename="lease-agreement-${Date.now()}.docx"`,
+      'Cache-Control': 'no-cache',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    });
+    
+    res.end(buffer, 'binary');
+  } catch (error) {
+    console.error('❌ Generate Word error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate Word document', 
       details: error.message,
       stack: error.stack 
     });
