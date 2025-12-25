@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lease Agreement</title>
+<style>
+  /* ===== FIXED PAGE BREAK CSS ===== */
+  @page {
+    size: A4;
+    margin: 15mm 18mm; /* top/bottom 15mm, left/right 18mm = 174mm content width */
+  }
+  
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: "Calibri", Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.3;
+    color: #000;
+  }
+  
+  /* Remove padding for print - only use @page margins */
+  .page {
+    width: 210mm;
+    margin: 0 auto;
+    box-sizing: border-box;
+    padding: 0;
+    min-height: auto;
+  }
+  
+  /* Optional: padding for screen preview only */
+  @media screen {
+    .page { padding: 1cm; }
+  }
+  
+  /* Trim margins at page boundaries */
+  .page > *:first-child { margin-top: 0 !important; }
+  .page > *:last-child { margin-bottom: 0 !important; }
+  
+  h1 {
+    text-align: center;
+    font-weight: bold;
+    font-size: 17pt;
+    margin: 0 0 10px 0;
+    letter-spacing: 0.5px;
+    width: 174mm;
+    max-width: 174mm;
+  }
+  
+  .part {
+    display: block;
+    text-align: left;
+    font-weight: bold;
+    font-size: 11pt;
+    margin: 0 0 6px 0;
+    text-decoration: underline;
+    width: 174mm !important;
+    max-width: 174mm !important;
+    box-sizing: border-box;
+  }
+  
+  .intro {
+    display: block;
+    text-align: left;
+    margin: 0 0 10px 0;
+    font-size: 11pt;
+    line-height: 1.3;
+    width: 174mm !important;
+    max-width: 174mm !important;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    box-sizing: border-box;
+  }
+  
+  /* CRITICAL: Prevent table splitting */
+  table {
+    width: 174mm;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 6px 0;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  
+  th, td {
+    border: 1px solid #000;
+    padding: 3px 4px;
+    vertical-align: top;
+    word-wrap: break-word;
+    font-size: 10pt;
+    line-height: 1.2;
+  }
+  
+  th {
+    font-weight: bold;
+    background: #ffffff;
+    text-align: center;
+  }
+  
+  .label {
+    font-weight: bold;
+  }
+  
+  .center {
+    text-align: center;
+  }
+  
+  .date-cell {
+    text-align: center;
+    white-space: nowrap !important;
+    word-wrap: normal !important;
+    overflow-wrap: normal !important;
+  }
+  
+  .note {
+    border: 1px solid #000;
+    padding: 4px 6px;
+    font-weight: bold;
+    margin: 6px 0;
+  }
+  
+  .footer {
+    text-align: right;
+    font-weight: normal;
+    margin: 8px 0 0 0;
+    font-size: 10pt;
+    width: 174mm;
+  }
+  
+  .footer strong {
+    font-weight: bold;
+  }
+  
+  /* CRITICAL: Zero-height page break */
+  .page-break {
+    page-break-after: always;
+    break-after: page;
+    display: block;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    line-height: 0;
+    font-size: 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- PAGE 1 -->
+<div class="page">
+  <h1>AGREEMENT OF LEASE</h1>
+  
+  <div class="part">PART A</div>
+  
+  <div class="intro">THE PREMISES ARE HIRED BY THE <strong>TENANT</strong> FROM THE <strong>LANDLORD</strong> SUBJECT TO THE TERMS AND CONDITIONS SET OUT HEREIN AND IN ANY ANNEXURE HERETO:</div>
+  
+  <!-- 2-column sections: 1.1 Landlord -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:92mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.1 THE LANDLORD:</td>
+      <td><strong>BENAV PROPERTIES (PTY) LTD</strong><br>TEL:((0861) 999 118)</td>
+    </tr>
+    <tr>
+      <td class="label">REGISTRATION NO:</td>
+      <td>2018/060720/07</td>
+    </tr>
+    <tr>
+      <td class="label">VAT REGISTRATION NO:</td>
+      <td>4200288134</td>
+    </tr>
+    <tr>
+      <td class="label">BANKING DETAILS:</td>
+      <td>BANK: NEDBANK, NORTHERN GAUTENG<br>A/C NO: 120 459 4295, BRANCH CODE: 14690500</td>
+    </tr>
+  </table>
+  
+  <!-- 3-column section: 1.2 Tenant with POSTAL/PHYSICAL split -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:46mm">
+      <col style="width:46mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.2 THE TENANT:</td>
+      <td colspan="2"><strong></strong></td>
+    </tr>
+    <tr>
+      <td class="label">REGISTRATION NO:</td>
+      <td colspan="2"></td>
+    </tr>
+    <tr>
+      <td class="label">VAT REGISTRATION NO:</td>
+      <td colspan="2"></td>
+    </tr>
+    <tr>
+      <td></td>
+      <th>POSTAL:</th>
+      <th>PHYSICAL:</th>
+    </tr>
+    <tr>
+      <td style="border-right: none;"></td>
+      <td style="border-left: 1.5px solid #000;"></td>
+      <td style="border-left: 1.5px solid #000;"></td>
+    </tr>
+    <tr>
+      <td class="label">TRADING AS:</td>
+      <td colspan="2"></td>
+    </tr>
+  </table>
+  
+  <!-- 2-column sections: 1.3-1.8 Premises -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:92mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.3 THE PREMISES:</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="label">1.4 BUILDING NAME:</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="label">1.5 BUILDING ADDRESS:</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="label">1.6 PREMISES MEASUREMENTS (APPROX):</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="label">1.7 TENANT'S PERCENTAGE PROPORTIONATE SHARE<br>OF BUILDING AND/OR PROPERTY EXCLUDING<br>PARKING AND FACILITY AREAS</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="label">1.8 PERMITTED USE OF PREMISES:<br>TO BE USED BY THE TENANT FOR THESE PURPOSES<br>AND FOR NO OTHER PURPOSES WHATSOEVER</td>
+      <td></td>
+    </tr>
+  </table>
+  
+  <!-- 3-column section: 1.9 Lease Period with YEARS/MONTHS -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:46mm">
+      <col style="width:46mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.9 INITIAL PERIOD OF LEASE:</td>
+      <th>YEARS</th>
+      <th>MONTHS</th>
+    </tr>
+    <tr>
+      <td></td>
+      <td class="center"><strong>3</strong></td>
+      <td class="center"><strong>0</strong></td>
+    </tr>
+    <tr>
+      <td class="label">COMMENCEMENT DATE:</td>
+      <td class="center"><strong></strong></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="label">TERMINATION DATE:</td>
+      <td class="center"><strong></strong></td>
+      <td></td>
+    </tr>
+  </table>
+  
+  <!-- 3-column section: 1.10 Option Period -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:46mm">
+      <col style="width:46mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.10 OPTION PERIOD OF LEASE (TO BE EXERCISED<br>BY 31/08/2028) OPTION PERIOD IS TO BE MUTUALLY<br>DETERMINED BY THE PARTIES. IF BUSINESS SOLD<br>LEASE TO BE RENEWED SUBJECT TO APPROVAL OF<br>NEW TENANT BY LANDLORD.</td>
+      <th>YEARS</th>
+      <th>MONTHS</th>
+    </tr>
+    <tr>
+      <td></td>
+      <td class="center"><strong>3</strong></td>
+      <td class="center"><strong>0</strong></td>
+    </tr>
+  </table>
+  
+  <!-- 2-column section: 1.11 Surety -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:92mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.11 SURETY</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="label">NAME:</td>
+      <td>Qaqambile Makana</td>
+    </tr>
+    <tr>
+      <td class="label">ID NUMBER:</td>
+      <td>8112255535085</td>
+    </tr>
+    <tr>
+      <td class="label">ADDRESS:</td>
+      <td>1780 Ekuphumleni township whittlesea</td>
+    </tr>
+  </table>
+  
+  <div class="footer">1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>INITIAL HERE:</strong> _______</div>
+</div>
+
+<!-- Page break -->
+<div class="page-break"></div>
+
+<!-- PAGE 2 -->
+<div class="page">
+  <!-- 1.12 - Wide 7-column table for Monthly Rental -->
+  <table>
+    <colgroup>
+      <col style="width:20mm">
+      <col style="width:20mm">
+      <col style="width:18mm">
+      <col style="width:42mm">
+      <col style="width:22mm">
+      <col style="width:26mm">
+      <col style="width:26mm">
+    </colgroup>
+    <tr>
+      <th colspan="7">1.12 MONTHLY RENTAL AND OTHER MONTHLY CHARGES.</th>
+    </tr>
+    <tr>
+      <th>BASIC RENT<br>EXCL. VAT</th>
+      <th>BASIC RENT<br>INCL. VAT</th>
+      <th>SECURITY<br>EXCL. VAT</th>
+      <th>ELECTRICITY<br>SEWERAGE & WATER<br><br>*REFUSE AS AT<br>12/12/2025<br>EXCL. VAT</th>
+      <th>*RATES AS AT<br>12/12/2025<br>EXCL. VAT</th>
+      <th>FROM</th>
+      <th>TO</th>
+    </tr>
+    <tr>
+      <td class="center"></td>
+      <td class="center"></td>
+      <td class="center"></td>
+      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>METERED OR % AGE OF<br>EXPENSE<br><br>*REFUSE -<br> p/m</td>
+      <td class="center">*</td>
+      <td class="date-cell"></td>
+      <td class="date-cell"></td>
+    </tr>
+    
+    
+  </table>
+  
+  <table>
+    <tr>
+      <td class="small" colspan="2"><strong>*INCREASES AS PER RELEVANT MUNICIPAL AUTHORITY/CONTRACTOR IN RATES AND REFUSE TO APPLY ON A PROPORTIONATE BASIS.</strong></td>
+    </tr>
+  </table>
+  
+  <!-- Back to 2-column: 1.13-1.18 -->
+  <table>
+    <colgroup>
+      <col style="width:82mm">
+      <col style="width:92mm">
+    </colgroup>
+    <tr>
+      <td class="label">1.13 DEPOSIT</td>
+      <td><strong></strong> – DEPOSIT HELD.</td>
+    </tr>
+    <tr>
+      <td class="label">1.14.1 TURNOVER PERCENTAGE</td>
+      <td>N/A</td>
+    </tr>
+    <tr>
+      <td class="label">1.14.2 TENANT'S FINANCIAL YEAR END:</td>
+      <td>N/A</td>
+    </tr>
+    <tr>
+      <td class="label">1.14.3 MINIMUM TURNOVER REQUIREMENT ESCALATING ANNUALLY</td>
+      <td>N/A</td>
+    </tr>
+    <tr>
+      <td class="label">1.15 TENANT'S ADVERTISING AND PROMOTIONAL<br>CONTRIBUTION: % AGE OF TENANT'S NET MONTHLY RENTAL<br>PLUS ATTRIBUTABLE VALUE ADDED TAX THEREON</td>
+      <td>N/A</td>
+    </tr>
+    <tr>
+      <td class="label">1.16 TENANT'S BANK ACCOUNT DETAILS:</td>
+      <td>N/A</td>
+    </tr>
+    <tr>
+      <td class="label">1.17 THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS LEASE.(EXCL. VAT)</td>
+      <td>R 750,00</td>
+    </tr>
+    <tr>
+      <td class="label">1.18 THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A"; "B"; "C"; "D"</td>
+      <td></td>
+    </tr>
+  </table>
+  
+  <div class="footer">2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>INITIAL HERE:</strong> _______</div>
+</div>
+
+</body>
+</html>
