@@ -6,7 +6,7 @@ const getApiBaseUrl = () => {
     return window.__RUNTIME_CONFIG__.REACT_APP_API_URL;
   }
   // Fall back to build-time env var or localhost
-  return process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+  return process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -138,6 +138,78 @@ export const ocrAPI = {
 
 // Leases API
 export const leasesAPI = {
+  // Parse Lease Control Schedule PDF
+  parseLeaseControl: async (pdfFile) => {
+    const formData = new FormData();
+    formData.append('pdf', pdfFile);
+    
+    const response = await fetch(`${API_BASE_URL}/leases/parse-lease-control`, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      let errorMessage = 'Failed to parse Lease Control PDF';
+      try {
+        const error = await response.json();
+        errorMessage = error.error || error.details || errorMessage;
+      } catch (e) {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+    
+    return response.json();
+  },
+
+  // Parse Invoice PDF to extract deposit, utilities, and tenant bank details
+  parseInvoice: async (pdfFile) => {
+    const formData = new FormData();
+    formData.append('pdf', pdfFile);
+    
+    const response = await fetch(`${API_BASE_URL}/leases/parse-invoice`, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      let errorMessage = 'Failed to parse Invoice PDF';
+      try {
+        const error = await response.json();
+        errorMessage = error.error || error.details || errorMessage;
+      } catch (e) {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+    
+    return response.json();
+  },
+
+  // AI-powered invoice extraction using Claude
+  extractInvoiceAI: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await fetch(`${API_BASE_URL}/leases/extract-invoice-ai`, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      let errorMessage = 'Failed to extract invoice data';
+      try {
+        const error = await response.json();
+        errorMessage = error.error || error.details || errorMessage;
+      } catch (e) {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+    
+    return response.json();
+  },
+
   getAll: async () => {
     return apiRequest('/leases');
   },
@@ -266,6 +338,167 @@ export const leasesAPI = {
     }
     
     return blob;
+  },
+
+  // Generate Deposit Invoice PDF from extracted data
+  generateInvoice: async (extractedData) => {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    const response = await fetch(`${API_BASE_URL}/leases/generate-invoice`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(extractedData),
+    });
+
+    if (!response.ok) {
+      let errorMessage = 'Invoice generation failed';
+      try {
+        const error = await response.json();
+        errorMessage = error.error || errorMessage;
+      } catch (e) {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const blob = await response.blob();
+    
+    if (blob.size === 0) {
+      throw new Error('Invoice PDF blob is empty');
+    }
+    
+    return blob;
+  },
+
+  // Generate Monthly Invoice PDF
+  generateMonthlyInvoice: async (invoiceData) => {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    const response = await fetch(`${API_BASE_URL}/leases/generate-monthly-invoice`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(invoiceData),
+    });
+
+    if (!response.ok) {
+      let errorMessage = 'Monthly invoice generation failed';
+      try {
+        const error = await response.json();
+        errorMessage = error.error || errorMessage;
+      } catch (e) {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const blob = await response.blob();
+    
+    if (blob.size === 0) {
+      throw new Error('Monthly invoice PDF blob is empty');
+    }
+    
+    return blob;
+  },
+
+  // Parse Utility Statement PDF for monthly invoice
+  parseUtilityStatement: async (file) => {
+    const formData = new FormData();
+    formData.append('pdf', file);
+    
+    const response = await fetch(`${API_BASE_URL}/leases/parse-utility-statement`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      let errorMessage = 'Utility statement parsing failed';
+      try {
+        const error = await response.json();
+        errorMessage = error.error || error.details || errorMessage;
+      } catch (e) {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.json();
+  },
+};
+
+// User Management API
+export const usersAPI = {
+  // Get all users
+  getAll: async () => {
+    const token = getAuthToken();
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/auth/users`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to fetch users');
+    }
+
+    return response.json();
+  },
+
+  // Create new user
+  create: async (userData) => {
+    const token = getAuthToken();
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/auth/users`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(userData),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create user');
+    }
+
+    return response.json();
+  },
+
+  // Delete user
+  delete: async (userId) => {
+    const token = getAuthToken();
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/auth/users/${userId}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to delete user');
+    }
+
+    return response.json();
   },
 };
 

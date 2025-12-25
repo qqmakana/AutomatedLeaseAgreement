@@ -54,9 +54,31 @@ async function generateLeaseWord(leaseData) {
     return formatMoney(num * 1.15);
   };
   
+  // Format address - filter out email addresses and phone numbers
   const formatAddress = (addr) => {
     if (!addr) return '';
-    return addr.split(/[,\n]+/).map(part => part.trim()).filter(part => part).join('\n');
+    let cleaned = addr;
+    // Cut off everything from these keywords onwards
+    cleaned = cleaned.replace(/\s*(Marks\s+)?Telephone\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Mobile\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Cell\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Phone\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Tel\s*[:.]?\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Fax\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Email\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*General\s+Contact\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Contact\s*.*/gi, '');
+    // Remove any remaining phone number patterns
+    cleaned = cleaned.replace(/\b0\d{2,3}[\s\-]?\d{3}[\s\-]?\d{3,4}\b/g, '');
+    cleaned = cleaned.replace(/\b\d{10,12}\b/g, '');
+    // Remove email addresses
+    cleaned = cleaned.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '');
+    // Clean up and format
+    return cleaned
+      .split(/\n/)
+      .map(part => part.trim())
+      .filter(part => part && part.length > 1)
+      .join('\n');
   };
 
   // Common border style
@@ -131,8 +153,16 @@ async function generateLeaseWord(leaseData) {
     });
   };
 
-  const y2Exists = financial.year2?.basicRent;
-  const y3Exists = financial.year3?.basicRent;
+  // Calculate total years based on lease period (section 1.9)
+  const leaseYears = parseInt(lease.years) || 0;
+  const leaseMonths = parseInt(lease.months) || 0;
+  const totalLeaseYears = leaseYears + (leaseMonths > 0 ? 1 : 0); // If there are extra months, add 1 year
+  
+  // Show years based on initial lease period
+  const y2Exists = totalLeaseYears >= 2;
+  const y3Exists = totalLeaseYears >= 3;
+  const y4Exists = totalLeaseYears >= 4;
+  const y5Exists = totalLeaseYears >= 5;
 
   // Build document
   const doc = new Document({
@@ -185,8 +215,7 @@ async function generateLeaseWord(leaseData) {
                 children: [
                   labelCell([boldText("1.1 THE LANDLORD:")]),
                   valueCell([
-                    boldText(landlord.name || ''),
-                    new TextRun({ text: `\nTEL:(${landlord.phone || ''})`, font: "Arial", size: 18 })
+                    boldText(landlord.name || '')
                   ]),
                 ],
               }),
@@ -496,7 +525,7 @@ async function generateLeaseWord(leaseData) {
           new Paragraph({
             children: [new TextRun({ text: "1      INITIAL HERE: _______", bold: true, font: "Arial", size: 18 })],
             alignment: AlignmentType.RIGHT,
-            spacing: { before: 100 },
+            spacing: { before: 400 },
           }),
           
           // Page break
@@ -539,10 +568,7 @@ async function generateLeaseWord(leaseData) {
                   centeredCell(formatMoney(financial.year1?.basicRent)),
                   centeredCell(calcVAT(financial.year1?.basicRent)),
                   centeredCell(formatMoney(financial.year1?.security)),
-                  centeredCell([
-                    text("ELECTRICITY\nSEWERAGE & WATER\n\nMETERED OR % AGE OF\nEXPENSE\n\n*REFUSE -\n"),
-                    text(`${formatMoney(financial.year1?.refuse)} p/m`)
-                  ]),
+                  centeredCell(`ELECTRICITY\nSEWERAGE & WATER\n\n*${formatMoney(financial.year1?.refuse)}\np/m`),
                   centeredCell(`*${formatMoney(financial.year1?.rates)}`),
                   centeredCell(formatDateShort(financial.year1?.from)),
                   centeredCell(formatDateShort(financial.year1?.to)),
@@ -554,8 +580,8 @@ async function generateLeaseWord(leaseData) {
                   centeredCell(formatMoney(financial.year2.basicRent)),
                   centeredCell(calcVAT(financial.year2.basicRent)),
                   centeredCell(formatMoney(financial.year2.security)),
-                  centeredCell("ELECTRICITY\nSEWERAGE & WATER\n\nMETERED OR % AGE OF\nEXPENSE\n\n* REFUSE"),
-                  centeredCell("*"),
+                  centeredCell(`ELECTRICITY\nSEWERAGE & WATER\n\n*${formatMoney(financial.year2?.refuse)}\np/m`),
+                  centeredCell(`*${formatMoney(financial.year2?.rates)}`),
                   centeredCell(formatDateShort(financial.year2.from)),
                   centeredCell(formatDateShort(financial.year2.to)),
                 ],
@@ -566,10 +592,34 @@ async function generateLeaseWord(leaseData) {
                   centeredCell(formatMoney(financial.year3.basicRent)),
                   centeredCell(calcVAT(financial.year3.basicRent)),
                   centeredCell(formatMoney(financial.year3.security)),
-                  centeredCell("ELECTRICITY\nSEWERAGE & WATER\n\nMETERED OR % AGE OF\nEXPENSE\n\n* REFUSE"),
-                  centeredCell("*"),
+                  centeredCell(`ELECTRICITY\nSEWERAGE & WATER\n\n*${formatMoney(financial.year3?.refuse)}\np/m`),
+                  centeredCell(`*${formatMoney(financial.year3?.rates)}`),
                   centeredCell(formatDateShort(financial.year3.from)),
                   centeredCell(formatDateShort(financial.year3.to)),
+                ],
+              })] : []),
+              // Year 4 (conditional)
+              ...(y4Exists ? [new TableRow({
+                children: [
+                  centeredCell(formatMoney(financial.year4.basicRent)),
+                  centeredCell(calcVAT(financial.year4.basicRent)),
+                  centeredCell(formatMoney(financial.year4.security)),
+                  centeredCell(`ELECTRICITY\nSEWERAGE & WATER\n\n*${formatMoney(financial.year4?.refuse)}\np/m`),
+                  centeredCell(`*${formatMoney(financial.year4?.rates)}`),
+                  centeredCell(formatDateShort(financial.year4.from)),
+                  centeredCell(formatDateShort(financial.year4.to)),
+                ],
+              })] : []),
+              // Year 5 (conditional)
+              ...(y5Exists ? [new TableRow({
+                children: [
+                  centeredCell(formatMoney(financial.year5.basicRent)),
+                  centeredCell(calcVAT(financial.year5.basicRent)),
+                  centeredCell(formatMoney(financial.year5.security)),
+                  centeredCell(`ELECTRICITY\nSEWERAGE & WATER\n\n*${formatMoney(financial.year5?.refuse)}\np/m`),
+                  centeredCell(`*${formatMoney(financial.year5?.rates)}`),
+                  centeredCell(formatDateShort(financial.year5.from)),
+                  centeredCell(formatDateShort(financial.year5.to)),
                 ],
               })] : []),
             ],
@@ -601,7 +651,7 @@ async function generateLeaseWord(leaseData) {
               new TableRow({
                 children: [
                   labelCell([boldText("1.13 DEPOSIT -")]),
-                  valueCell([boldText(`${formatMoney(financial.deposit)} – DEPOSIT HELD.`)]),
+                  valueCell([boldText(`${formatMoney(financial.deposit)} – ${financial.depositType === 'payable' ? 'DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.' : 'DEPOSIT HELD.'}`)]),
                 ],
               }),
               new TableRow({
@@ -645,24 +695,6 @@ async function generateLeaseWord(leaseData) {
           // 1.16
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
-            rows: [
-              new TableRow({
-                children: [
-                  new TableCell({
-                    children: [new Paragraph({ 
-                      children: [boldText("1.16"), text(` TENANT'S BANK ACCOUNT DETAILS: ${tenant.bankName || 'N/A'}`)],
-                      spacing: { before: 20, after: 20 }
-                    })],
-                    borders,
-                  }),
-                ],
-              }),
-            ],
-          }),
-          
-          // 1.17
-          new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
             layout: TableLayoutType.FIXED,
             columnWidths: [7500, 2500],
             rows: [
@@ -671,7 +703,7 @@ async function generateLeaseWord(leaseData) {
                   new TableCell({
                     children: [new Paragraph({ 
                       children: [
-                        boldText("1.17"),
+                        boldText("1.16"),
                         text(" THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS\nLEASE.(EXCL. VAT)")
                       ],
                       spacing: { before: 20, after: 20 }
@@ -684,7 +716,7 @@ async function generateLeaseWord(leaseData) {
             ],
           }),
           
-          // 1.18
+          // 1.17
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -692,7 +724,11 @@ async function generateLeaseWord(leaseData) {
                 children: [
                   new TableCell({
                     children: [new Paragraph({ 
-                      children: [boldText("1.18"), text(' THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A";"B";"C";"D"')],
+                      children: [boldText("1.17"), text(` THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: ${(() => {
+                        const annexures = financial.annexures || { A: true, B: true, C: true, D: true };
+                        const selected = Object.keys(annexures).filter(l => annexures[l]).sort();
+                        return selected.length > 0 ? selected.map(l => `"${l}"`).join(';') : 'NONE';
+                      })()}`)],
                       spacing: { before: 20, after: 20 }
                     })],
                     borders,
@@ -706,7 +742,7 @@ async function generateLeaseWord(leaseData) {
           new Paragraph({
             children: [new TextRun({ text: "2      INITIAL HERE: _______", bold: true, font: "Arial", size: 18 })],
             alignment: AlignmentType.RIGHT,
-            spacing: { before: 100 },
+            spacing: { before: 400 },
           }),
         ],
       },

@@ -92,15 +92,43 @@ function generateLeaseHTML(data) {
     return formatMoney(num * 1.15);
   };
   
-  // Format address with line breaks (split by comma or newline)
+  // Format address with line breaks - filter out email addresses and phone numbers
   const formatAddress = (addr) => {
     if (!addr) return '';
-    // Split by comma, newline, or " , " and join with <br>
-    return addr.split(/[,\n]+/).map(part => part.trim()).filter(part => part).join('<br>');
+    let cleaned = addr;
+    // Cut off everything from these keywords onwards
+    cleaned = cleaned.replace(/\s*(Marks\s+)?Telephone\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Mobile\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Cell\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Phone\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Tel\s*[:.]?\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Fax\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Email\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*General\s+Contact\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Contact\s*.*/gi, '');
+    // Remove any remaining phone number patterns
+    cleaned = cleaned.replace(/\b0\d{2,3}[\s\-]?\d{3}[\s\-]?\d{3,4}\b/g, '');
+    cleaned = cleaned.replace(/\b\d{10,12}\b/g, '');
+    // Remove email addresses
+    cleaned = cleaned.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '');
+    // Clean up and format
+    return cleaned
+      .split(/\n/)
+      .map(part => part.trim())
+      .filter(part => part && part.length > 1)
+      .join('<br>');
   };
   
-  const y2Exists = financial.year2?.basicRent;
-  const y3Exists = financial.year3?.basicRent;
+  // Calculate total years based on lease period (section 1.9)
+  const leaseYears = parseInt(lease.years) || 0;
+  const leaseMonths = parseInt(lease.months) || 0;
+  const totalLeaseYears = leaseYears + (leaseMonths > 0 ? 1 : 0); // If there are extra months, add 1 year
+  
+  // Show years based on initial lease period
+  const y2Exists = totalLeaseYears >= 2;
+  const y3Exists = totalLeaseYears >= 3;
+  const y4Exists = totalLeaseYears >= 4;
+  const y5Exists = totalLeaseYears >= 5;
   
   return `<!DOCTYPE html>
 <html lang="en">
@@ -272,7 +300,7 @@ function generateLeaseHTML(data) {
   .footer {
     text-align: right;
     font-weight: bold;
-    margin: 3pt 0 0 0;
+    margin: 25pt 0 0 0;
     font-size: 9pt;
   }
   
@@ -308,7 +336,7 @@ function generateLeaseHTML(data) {
     </colgroup>
     <tr>
       <td class="label"><b>1.1 THE LANDLORD:</b></td>
-      <td><b>${landlord.name || ''}</b><br>TEL:(${landlord.phone || ''})</td>
+      <td><b>${landlord.name || ''}</b></td>
     </tr>
     <tr>
       <td>REGISTRATION NO:</td>
@@ -507,7 +535,7 @@ function generateLeaseHTML(data) {
       <td class="center">${formatMoney(financial.year1?.basicRent)}</td>
       <td class="center">${calcVAT(financial.year1?.basicRent)}</td>
       <td class="center">${formatMoney(financial.year1?.security)}</td>
-      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>METERED OR % AGE OF<br>EXPENSE<br><br>*REFUSE -<br>${formatMoney(financial.year1?.refuse)} p/m</td>
+      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatMoney(financial.year1?.refuse)}<br>p/m</td>
       <td class="center">*${formatMoney(financial.year1?.rates)}</td>
       <td class="date-cell">${formatDateShort(financial.year1?.from)}</td>
       <td class="date-cell">${formatDateShort(financial.year1?.to)}</td>
@@ -516,8 +544,8 @@ function generateLeaseHTML(data) {
       <td class="center">${formatMoney(financial.year2.basicRent)}</td>
       <td class="center">${calcVAT(financial.year2.basicRent)}</td>
       <td class="center">${formatMoney(financial.year2.security)}</td>
-      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>METERED OR % AGE OF<br>EXPENSE<br><br>* REFUSE</td>
-      <td class="center">*</td>
+      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatMoney(financial.year2?.refuse)}<br>p/m</td>
+      <td class="center">*${formatMoney(financial.year2?.rates)}</td>
       <td class="date-cell">${formatDateShort(financial.year2.from)}</td>
       <td class="date-cell">${formatDateShort(financial.year2.to)}</td>
     </tr>` : ''}
@@ -525,10 +553,28 @@ function generateLeaseHTML(data) {
       <td class="center">${formatMoney(financial.year3.basicRent)}</td>
       <td class="center">${calcVAT(financial.year3.basicRent)}</td>
       <td class="center">${formatMoney(financial.year3.security)}</td>
-      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>METERED OR % AGE OF<br>EXPENSE<br><br>* REFUSE</td>
-      <td class="center">*</td>
+      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatMoney(financial.year3?.refuse)}<br>p/m</td>
+      <td class="center">*${formatMoney(financial.year3?.rates)}</td>
       <td class="date-cell">${formatDateShort(financial.year3.from)}</td>
       <td class="date-cell">${formatDateShort(financial.year3.to)}</td>
+    </tr>` : ''}
+    ${y4Exists ? `<tr>
+      <td class="center">${formatMoney(financial.year4.basicRent)}</td>
+      <td class="center">${calcVAT(financial.year4.basicRent)}</td>
+      <td class="center">${formatMoney(financial.year4.security)}</td>
+      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatMoney(financial.year4?.refuse)}<br>p/m</td>
+      <td class="center">*${formatMoney(financial.year4?.rates)}</td>
+      <td class="date-cell">${formatDateShort(financial.year4.from)}</td>
+      <td class="date-cell">${formatDateShort(financial.year4.to)}</td>
+    </tr>` : ''}
+    ${y5Exists ? `<tr>
+      <td class="center">${formatMoney(financial.year5.basicRent)}</td>
+      <td class="center">${calcVAT(financial.year5.basicRent)}</td>
+      <td class="center">${formatMoney(financial.year5.security)}</td>
+      <td class="center">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatMoney(financial.year5?.refuse)}<br>p/m</td>
+      <td class="center">*${formatMoney(financial.year5?.rates)}</td>
+      <td class="date-cell">${formatDateShort(financial.year5.from)}</td>
+      <td class="date-cell">${formatDateShort(financial.year5.to)}</td>
     </tr>` : ''}
   </table>
   
@@ -546,7 +592,7 @@ function generateLeaseHTML(data) {
     </colgroup>
     <tr>
       <td class="label"><b>1.13 DEPOSIT -</b></td>
-      <td><b>${formatMoney(financial.deposit)} – DEPOSIT HELD.</b></td>
+      <td><b>${formatMoney(financial.deposit)} – ${financial.depositType === 'payable' ? 'DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.' : 'DEPOSIT HELD.'}</b></td>
     </tr>
     <tr>
       <td class="label"><b>1.14.1</b> TURNOVER PERCENTAGE</td>
@@ -574,29 +620,26 @@ function generateLeaseHTML(data) {
     </tr>
   </table>
   
-  <!-- 1.16 (Full width - no dividing line) -->
-  <table>
-    <tr>
-      <td class="label"><b>1.16</b> TENANT'S BANK ACCOUNT DETAILS: ${tenant.bankName || 'N/A'}</td>
-    </tr>
-  </table>
-  
-  <!-- 1.17 (75/25 split - line 1 is 84 chars, needs wide column) -->
+  <!-- 1.16 (75/25 split - line 1 is 84 chars, needs wide column) -->
   <table>
     <colgroup>
       <col style="width:75%">
       <col style="width:25%">
     </colgroup>
     <tr>
-      <td class="label"><b>1.17</b> THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS<br>LEASE.(EXCL. VAT)</td>
+      <td class="label"><b>1.16</b> THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS<br>LEASE.(EXCL. VAT)</td>
       <td>${formatMoney(financial.leaseFee)}</td>
     </tr>
   </table>
   
-  <!-- 1.18 (Full width - no dividing line) -->
+  <!-- 1.17 (Full width - no dividing line) -->
   <table>
     <tr>
-      <td class="label"><b>1.18</b> THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A";"B";"C";"D"</td>
+      <td class="label"><b>1.17</b> THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: ${(() => {
+        const annexures = financial.annexures || { A: true, B: true, C: true, D: true };
+        const selected = Object.keys(annexures).filter(l => annexures[l]).sort();
+        return selected.length > 0 ? selected.map(l => `"${l}"`).join(';') : 'NONE';
+      })()}</td>
     </tr>
   </table>
   

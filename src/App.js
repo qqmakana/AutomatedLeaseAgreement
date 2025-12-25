@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Upload, FileText, Download, AlertCircle, CheckCircle, Building, User, Calendar, Receipt, Eye, Clipboard, Save, History, Star, Shield, FileCheck, X, ArrowLeft, Folder, Loader2, Trash2, LogOut, ChevronDown, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Upload, FileText, Download, AlertCircle, CheckCircle, Building, User, Calendar, Receipt, Eye, Clipboard, Save, History, Star, Shield, FileCheck, X, ArrowLeft, Folder, Loader2, Trash2, LogOut, ChevronDown, Sparkles, Zap, Users, UserPlus, HelpCircle, Send } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { processDocument } from './utils/documentParsers';
 import { parseExtractedData } from './utils/clientOCR';
@@ -9,7 +9,9 @@ import { initToast, toast, removeToast } from './utils/toast';
 import LoadingSpinner from './components/LoadingSpinner';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import Login from './components/Login';
-import { leasesAPI } from './services/api';
+import AdminPanel from './components/AdminPanel';
+import { leasesAPI, usersAPI } from './services/api';
+import { logActivity, ACTIVITY_TYPES } from './utils/activityLogger';
 import './App.css';
 
 const LeaseDraftingSystem = () => {
@@ -17,6 +19,9 @@ const LeaseDraftingSystem = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [helpMessage, setHelpMessage] = useState('');
 
   // Check for existing session on mount
   useEffect(() => {
@@ -39,11 +44,39 @@ const LeaseDraftingSystem = () => {
   };
 
   const handleLogout = () => {
+    // Log logout activity before clearing user
+    logActivity(ACTIVITY_TYPES.LOGOUT, {});
     localStorage.removeItem('authUser');
     setCurrentUser(null);
     setIsAuthenticated(false);
-    setShowUserMenu(false);
-    toast.info('Logged out successfully');
+    toast.success('Logged out successfully');
+  };
+
+  const handleSubmitHelpRequest = () => {
+    if (!helpMessage.trim()) {
+      toast.error('Please enter your message');
+      return;
+    }
+
+    const helpRequest = {
+      id: Date.now(),
+      username: currentUser?.username,
+      userName: currentUser?.name,
+      message: helpMessage,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    // Save to localStorage
+    const existingRequests = JSON.parse(localStorage.getItem('helpRequests') || '[]');
+    localStorage.setItem('helpRequests', JSON.stringify([helpRequest, ...existingRequests]));
+
+    // Log activity
+    logActivity(ACTIVITY_TYPES.HELP_REQUEST || 'help_request', { message: helpMessage.substring(0, 50) });
+
+    setHelpMessage('');
+    setShowHelpModal(false);
+    toast.success('Help request sent! Admin will assist you soon.');
   };
 
   const [documents, setDocuments] = useState({
@@ -53,17 +86,21 @@ const LeaseDraftingSystem = () => {
     suretyID: []
   });
 
+  // Check for saved default landlord on initial load
+  const savedDefaultLandlordInit = localStorage.getItem('defaultLandlord');
+  const initialLandlord = savedDefaultLandlordInit ? JSON.parse(savedDefaultLandlordInit) : {
+    name: '',
+    regNo: '',
+    vatNo: '',
+    phone: '',
+    bank: '',
+    branch: '',
+    accountNo: '',
+    branchCode: ''
+  };
+
   const [extractedData, setExtractedData] = useState({
-    landlord: {
-      name: 'BENAV PROPERTIES (PTY) LTD',
-      regNo: '2018/060720/07',
-      vatNo: '4200288134',
-      phone: '(0861) 999 118',
-      bank: 'NEDBANK',
-      branch: 'NORTHERN GAUTENG',
-      accountNo: '120 459 4295',
-      branchCode: '14690500'
-    },
+    landlord: initialLandlord,
     tenant: {
       name: '',
       idNumber: '',
@@ -104,7 +141,12 @@ const LeaseDraftingSystem = () => {
       year1: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
       year2: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
       year3: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
+      year4: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
+      year5: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
+      escalationRate: '6', // Default 6% escalation - configurable
       deposit: '',
+      depositType: 'held', // 'held' or 'payable'
+      annexures: { A: true, B: true, C: true, D: true }, // Annexure checkboxes
       leaseFee: '750.00',
       utilities: 'METERED OR % AGE OF EXPENSE',
       turnoverPercentage: 'N/A',
@@ -122,6 +164,41 @@ const LeaseDraftingSystem = () => {
   const [processingErrors, setProcessingErrors] = useState({});
   const [showFinancialYear2, setShowFinancialYear2] = useState(true);
   const [showFinancialYear3, setShowFinancialYear3] = useState(true);
+
+  // Helper function to get or create year data dynamically
+  const getYearData = (yearNum) => {
+    const yearKey = `year${yearNum}`;
+    if (extractedData.financial[yearKey]) {
+      return extractedData.financial[yearKey];
+    }
+    // Return empty structure for years that don't exist yet
+    return { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' };
+  };
+
+  // Helper function to calculate escalated value (configurable % increase per year)
+  const getEscalatedValue = (baseValue, yearNum) => {
+    if (!baseValue || yearNum <= 1) return baseValue;
+    const numericValue = parseFloat(baseValue);
+    if (isNaN(numericValue)) return '';
+    // Apply configurable escalation for each year after year 1
+    const escalationPercent = parseFloat(extractedData.financial.escalationRate || '6') / 100;
+    const escalatedValue = numericValue * Math.pow(1 + escalationPercent, yearNum - 1);
+    return escalatedValue.toFixed(2);
+  };
+
+  // Helper to ensure year data exists in state
+  const ensureYearData = (yearNum) => {
+    const yearKey = `year${yearNum}`;
+    if (!extractedData.financial[yearKey]) {
+      setExtractedData(prev => ({
+        ...prev,
+        financial: {
+          ...prev.financial,
+          [yearKey]: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' }
+        }
+      }));
+    }
+  };
   const [pastedFicaText, setPastedFicaText] = useState('');
   const [pastedLeaseText, setPastedLeaseText] = useState('');
   const [drafts, setDrafts] = useState([]);
@@ -138,10 +215,63 @@ const LeaseDraftingSystem = () => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [isGeneratingWord, setIsGeneratingWord] = useState(false);
   const [isGeneratingLease, setIsGeneratingLease] = useState(false);
+  const [isParsingLeaseControl, setIsParsingLeaseControl] = useState(false);
+  const [leaseControlFile, setLeaseControlFile] = useState(null);
+  const [leaseControlError, setLeaseControlError] = useState(null);
+  const [leaseControlSuccess, setLeaseControlSuccess] = useState(false);
+  
+  // Invoice parsing state
+  const [isParsingInvoice, setIsParsingInvoice] = useState(false);
+  const [invoiceFile, setInvoiceFile] = useState(null);
+  const [invoiceError, setInvoiceError] = useState(null);
+  const [invoiceSuccess, setInvoiceSuccess] = useState(false);
+  const [invoiceData, setInvoiceData] = useState(null);
+  const [invoiceApplied, setInvoiceApplied] = useState(false);
+  const [invoiceExtractOptions, setInvoiceExtractOptions] = useState({
+    landlord: true,
+    deposit: true,
+    electricity: false,
+    water: false,
+    sewerage: false
+  });
+  
+  // Refs for file inputs (to reset them after form clear)
+  const leaseControlInputRef = useRef(null);
+  const invoiceInputRef = useRef(null);
+  
+  // Monthly Invoice State
+  const [showMonthlyInvoice, setShowMonthlyInvoice] = useState(false);
+  const [monthlyInvoiceData, setMonthlyInvoiceData] = useState({
+    invoiceMonth: new Date().toISOString().slice(0, 7), // YYYY-MM format
+    balanceBF: '0.00',
+    charges: {
+      rent: '',
+      electricity: '',
+      water: '',
+      sewerage: '',
+      municipal: '',
+      refuse: ''
+    }
+  });
+  const [isGeneratingMonthlyInvoice, setIsGeneratingMonthlyInvoice] = useState(false);
+  
+  // Utility Statement Upload State
+  const [utilityFile, setUtilityFile] = useState(null);
+  const [isParsingUtility, setIsParsingUtility] = useState(false);
+  const [utilityError, setUtilityError] = useState(null);
+  const [utilitySuccess, setUtilitySuccess] = useState(false);
+  const [utilityData, setUtilityData] = useState(null);
+  
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState(''); // '', 'saving', 'saved'
   const [downloadingHistoryId, setDownloadingHistoryId] = useState(null); // Track which history item is downloading
+  
+  // User Management State
+  const [showUserManagement, setShowUserManagement] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [newUser, setNewUser] = useState({ email: '', password: '', name: '', organization: '', role: 'user' });
   const [downloadingSavedId, setDownloadingSavedId] = useState(null); // Track which saved lease is downloading
   const [isLoadingPreview, setIsLoadingPreview] = useState(false); // Track if preview is being generated
   const [verificationStatus, setVerificationStatus] = useState({
@@ -459,8 +589,302 @@ const LeaseDraftingSystem = () => {
     }
   };
 
+  // Handle Lease Control Schedule PDF upload
+  const handleLeaseControlUpload = async (file) => {
+    if (!file) return;
+    
+    // Validate file type
+    if (file.type !== 'application/pdf') {
+      setLeaseControlError('Please upload a PDF file');
+      return;
+    }
+    
+    setLeaseControlFile(file);
+    setLeaseControlError(null);
+    setLeaseControlSuccess(false);
+    setIsParsingLeaseControl(true);
+    
+    try {
+      toast.info('Parsing Lease Control Schedule...');
+      
+      // Call the API to parse the PDF
+      const result = await leasesAPI.parseLeaseControl(file);
+      
+      if (result.success && result.data) {
+        const data = result.data;
+        
+        // Update extractedData with parsed values
+        setExtractedData(prev => ({
+          landlord: {
+            ...prev.landlord,
+            name: data.landlord?.name || prev.landlord.name,
+            phone: data.landlord?.phone || prev.landlord.phone,
+          },
+          tenant: {
+            ...prev.tenant,
+            name: data.tenant?.name || prev.tenant.name,
+            regNo: data.tenant?.regNo || prev.tenant.regNo,
+            vatNo: data.tenant?.vatNo || prev.tenant.vatNo,
+            tradingAs: data.tenant?.tradingAs || prev.tenant.tradingAs,
+            postalAddress: data.tenant?.postalAddress || prev.tenant.postalAddress,
+            physicalAddress: data.tenant?.physicalAddress || prev.tenant.physicalAddress,
+            bankAccountHolder: data.tenant?.bankAccountHolder || prev.tenant.bankAccountHolder,
+            email: data.tenant?.email || prev.tenant.email,
+          },
+          surety: {
+            ...prev.surety,
+            name: data.surety?.name || prev.surety.name,
+            address: data.surety?.address || prev.surety.address,
+            capacity: data.surety?.capacity || '',
+          },
+          premises: {
+            ...prev.premises,
+            unit: data.premises?.unit || prev.premises.unit,
+            buildingName: data.premises?.buildingName || prev.premises.buildingName,
+            buildingAddress: data.premises?.buildingAddress || prev.premises.buildingAddress,
+            size: data.premises?.size || prev.premises.size,
+            percentage: data.premises?.percentage || prev.premises.percentage,
+            permittedUse: data.premises?.permittedUse || prev.premises.permittedUse,
+          },
+          lease: {
+            ...prev.lease,
+            years: data.lease?.years ?? prev.lease.years,
+            months: data.lease?.months ?? prev.lease.months,
+            commencementDate: data.lease?.commencementDate || prev.lease.commencementDate,
+            terminationDate: data.lease?.terminationDate || prev.lease.terminationDate,
+            optionYears: data.lease?.optionYears ?? prev.lease.optionYears,
+            optionMonths: data.lease?.optionMonths ?? prev.lease.optionMonths,
+            optionExerciseDate: data.lease?.optionExerciseDate || prev.lease.optionExerciseDate,
+          },
+          financial: {
+            ...prev.financial,
+            year1: {
+              ...prev.financial.year1,
+              basicRent: data.financial?.year1?.basicRent || prev.financial.year1.basicRent,
+              security: data.financial?.year1?.security || prev.financial.year1.security,
+              refuse: data.financial?.year1?.refuse || prev.financial.year1.refuse,
+              rates: data.financial?.year1?.rates || prev.financial.year1.rates,
+              sewerageWater: data.financial?.year1?.sewerageWater || prev.financial.year1.sewerageWater || 'METERED',
+              from: data.financial?.year1?.from || prev.financial.year1.from,
+              to: data.financial?.year1?.to || prev.financial.year1.to,
+            },
+            year2: {
+              ...prev.financial.year2,
+              basicRent: data.financial?.year2?.basicRent || prev.financial.year2.basicRent,
+              from: data.financial?.year2?.from || prev.financial.year2.from,
+              to: data.financial?.year2?.to || prev.financial.year2.to,
+            },
+            year3: {
+              ...prev.financial.year3,
+              basicRent: data.financial?.year3?.basicRent || prev.financial.year3.basicRent,
+              from: data.financial?.year3?.from || prev.financial.year3.from,
+              to: data.financial?.year3?.to || prev.financial.year3.to,
+            },
+            year4: {
+              ...prev.financial.year4,
+              basicRent: data.financial?.year4?.basicRent || prev.financial.year4.basicRent,
+              from: data.financial?.year4?.from || prev.financial.year4.from,
+              to: data.financial?.year4?.to || prev.financial.year4.to,
+            },
+            year5: {
+              ...prev.financial.year5,
+              basicRent: data.financial?.year5?.basicRent || prev.financial.year5.basicRent,
+              from: data.financial?.year5?.from || prev.financial.year5.from,
+              to: data.financial?.year5?.to || prev.financial.year5.to,
+            },
+            deposit: data.financial?.deposit || prev.financial.deposit,
+            leaseFee: data.financial?.leaseFee || prev.financial.leaseFee,
+            escalationRate: data.financial?.escalationRate || prev.financial.escalationRate || '6',
+          }
+        }));
+        
+        setLeaseControlSuccess(true);
+        toast.success('✅ Lease Control Schedule parsed successfully! Form has been auto-populated.');
+        
+        // Log activity
+        logActivity(ACTIVITY_TYPES.UPLOAD_LEASE_CONTROL, { 
+          fileName: file.name,
+          tenant: data.tenant?.name || 'Unknown'
+        });
+        
+        // Add to audit trail
+        addAuditEntry('Lease Control Schedule Uploaded', {
+          fileName: file.name,
+          tenant: data.tenant?.name,
+          premises: data.premises?.unit,
+          leaseYears: data.lease?.years
+        });
+      }
+    } catch (error) {
+      console.error('Error parsing Lease Control PDF:', error);
+      setLeaseControlError(error.message || 'Failed to parse Lease Control Schedule');
+      toast.error(`Failed to parse: ${error.message}`);
+      
+      addAuditEntry('Lease Control Parse Failed', {
+        fileName: file.name,
+        error: error.message
+      });
+    } finally {
+      setIsParsingLeaseControl(false);
+    }
+  };
+
+  // Handle Invoice PDF upload and extraction (using our own parser - no paid API needed)
+  const handleInvoiceUpload = async (file) => {
+    if (!file) return;
+    
+    // Validate file type - PDF only for our parser
+    if (file.type !== 'application/pdf') {
+      setInvoiceError('Please upload a PDF file');
+      return;
+    }
+    
+    setInvoiceFile(file);
+    setInvoiceError(null);
+    setInvoiceSuccess(false);
+    setIsParsingInvoice(true);
+    
+    try {
+      toast.info('Parsing Invoice PDF...');
+      
+      // Call our own PDF parser (no paid API needed)
+      const result = await leasesAPI.parseInvoice(file);
+      
+      if (result.success && result.data) {
+        const data = result.data;
+        setInvoiceData(data);
+        setInvoiceSuccess(true);
+        toast.success('Invoice parsed successfully! Select what to extract.');
+        
+        // Log activity
+        logActivity(ACTIVITY_TYPES.UPLOAD_INVOICE, { 
+          fileName: file.name,
+          hasLandlord: !!data.landlord?.name
+        });
+        
+        addAuditEntry('Invoice Parsed', {
+          fileName: file.name,
+          landlord: data.landlord?.name || 'N/A',
+          deposit: data.deposit || 'N/A',
+          hasUtilities: !!(data.utilities?.electricity || data.utilities?.water)
+        });
+      } else {
+        throw new Error('No data extracted from invoice');
+      }
+    } catch (error) {
+      console.error('Invoice parsing error:', error);
+      setInvoiceError(error.message || 'Failed to parse Invoice');
+      toast.error(`Failed to parse invoice: ${error.message}`);
+    } finally {
+      setIsParsingInvoice(false);
+    }
+  };
+
+  // Apply selected invoice data to the form
+  const applyInvoiceData = () => {
+    if (!invoiceData) return;
+    
+    setExtractedData(prev => {
+      const updated = { ...prev };
+      
+      // Apply landlord details if selected and available
+      if (invoiceExtractOptions.landlord && invoiceData.landlord) {
+        const landlordData = invoiceData.landlord;
+        updated.landlord = {
+          ...updated.landlord,
+          name: landlordData.name || updated.landlord?.name || '',
+          regNo: landlordData.regNo || updated.landlord?.regNo || '',
+          vatNo: landlordData.vatNo || updated.landlord?.vatNo || '',
+          phone: landlordData.phone || updated.landlord?.phone || '',
+          bank: landlordData.bank || updated.landlord?.bank || '',
+          branch: landlordData.branch || updated.landlord?.branch || '',
+          accountNo: landlordData.accountNo || updated.landlord?.accountNo || '',
+          branchCode: landlordData.branchCode || updated.landlord?.branchCode || ''
+        };
+      }
+      
+      // Apply deposit if selected and available
+      if (invoiceExtractOptions.deposit && invoiceData.deposit) {
+        updated.financial = {
+          ...updated.financial,
+          deposit: invoiceData.deposit
+        };
+      }
+      
+      // Apply utilities if selected
+      if (invoiceExtractOptions.electricity && invoiceData.utilities?.electricity) {
+        // Add to Year 1 sewerage/water field or create separate
+        updated.financial = {
+          ...updated.financial,
+          year1: {
+            ...updated.financial.year1,
+            sewerageWater: invoiceData.utilities.electricity
+          }
+        };
+      }
+      
+      if (invoiceExtractOptions.water && invoiceData.utilities?.water) {
+        // Combine water with sewerage if both selected
+        const currentSewerage = parseFloat(updated.financial?.year1?.sewerageWater || 0);
+        const water = parseFloat(invoiceData.utilities.water || 0);
+        updated.financial = {
+          ...updated.financial,
+          year1: {
+            ...updated.financial.year1,
+            sewerageWater: (currentSewerage + water).toFixed(2)
+          }
+        };
+      }
+      
+      if (invoiceExtractOptions.sewerage && invoiceData.utilities?.sewerage) {
+        const currentSewerage = parseFloat(updated.financial?.year1?.sewerageWater || 0);
+        const sewerage = parseFloat(invoiceData.utilities.sewerage || 0);
+        updated.financial = {
+          ...updated.financial,
+          year1: {
+            ...updated.financial.year1,
+            sewerageWater: (currentSewerage + sewerage).toFixed(2)
+          }
+        };
+      }
+      
+      // Apply tenant bank details if available
+      if (invoiceData.tenantBank?.accountNumber) {
+        updated.tenant = {
+          ...updated.tenant,
+          bankName: invoiceData.tenantBank.bankName || updated.tenant.bankName,
+          bankAccountNo: invoiceData.tenantBank.accountNumber || updated.tenant.bankAccountNo,
+          bankBranchCode: invoiceData.tenantBank.branchCode || updated.tenant.bankBranchCode,
+          bankAccountHolder: invoiceData.tenantBank.accountName || updated.tenant.bankAccountHolder
+        };
+      }
+      
+      return updated;
+    });
+    
+    // Mark as applied and show success
+    setInvoiceApplied(true);
+    toast.success('Invoice data applied to form!');
+  };
+
+  // Remove uploaded invoice
+  const handleRemoveInvoice = () => {
+    setInvoiceFile(null);
+    setInvoiceData(null);
+    setInvoiceError(null);
+    setInvoiceSuccess(false);
+    setInvoiceApplied(false);
+    setInvoiceExtractOptions({
+      landlord: true,
+      deposit: true,
+      electricity: false,
+      water: false,
+      sewerage: false
+    });
+  };
+
   const calculateRental = (year1Rent, yearIndex) => {
-    const escalation = 0.06; // 6% escalation
+    const escalation = parseFloat(extractedData.financial.escalationRate || '6') / 100;
     return (parseFloat(year1Rent || 0) * Math.pow(1 + escalation, yearIndex)).toFixed(2);
   };
 
@@ -498,14 +922,14 @@ const LeaseDraftingSystem = () => {
     const savedDefaultLandlord = localStorage.getItem('defaultLandlord');
     const savedDefaultSurety = localStorage.getItem('defaultSurety');
     const defaultLandlord = savedDefaultLandlord ? JSON.parse(savedDefaultLandlord) : {
-      name: 'BENAV PROPERTIES (PTY) LTD',
-      regNo: '2018/060720/07',
-      vatNo: '4200288134',
-      phone: '(0861) 999 118',
-      bank: 'NEDBANK',
-      branch: 'NORTHERN GAUTENG',
-      accountNo: '120 459 4295',
-      branchCode: '14690500'
+      name: '',
+      regNo: '',
+      vatNo: '',
+      phone: '',
+      bank: '',
+      branch: '',
+      accountNo: '',
+      branchCode: ''
     };
     const defaultSurety = savedDefaultSurety ? JSON.parse(savedDefaultSurety) : {
       name: '',
@@ -551,7 +975,12 @@ const LeaseDraftingSystem = () => {
         year1: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
         year2: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
         year3: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
+        year4: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
+        year5: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
+        escalationRate: '6', // Reset to default 6%
         deposit: '',
+        depositType: 'held',
+        annexures: { A: true, B: true, C: true, D: true },
         leaseFee: '750.00',
         utilities: 'METERED OR % OF EXPENSE',
         turnoverPercentage: 'N/A',
@@ -565,6 +994,26 @@ const LeaseDraftingSystem = () => {
     // Clear pasted text
     setPastedFicaText('');
     setPastedLeaseText('');
+    
+    // Clear lease control upload state
+    setLeaseControlFile(null);
+    setLeaseControlSuccess(false);
+    setLeaseControlError(null);
+    // Reset the file input element
+    if (leaseControlInputRef.current) {
+      leaseControlInputRef.current.value = '';
+    }
+    
+    // Clear invoice upload state
+    setInvoiceFile(null);
+    setInvoiceSuccess(false);
+    setInvoiceError(null);
+    setInvoiceData(null);
+    setInvoiceApplied(false);
+    // Reset the file input element
+    if (invoiceInputRef.current) {
+      invoiceInputRef.current.value = '';
+    }
     
     // Clear processing states
     setProcessing({});
@@ -585,6 +1034,9 @@ const LeaseDraftingSystem = () => {
       action: 'user_cleared_form',
       timestamp: new Date().toISOString()
     });
+    
+    // Log activity
+    logActivity(ACTIVITY_TYPES.CLEAR_FORM, {});
   };
 
   const updateFinancialField = (year, field, value) => {
@@ -600,25 +1052,31 @@ const LeaseDraftingSystem = () => {
         }
       };
 
-      // Auto-calculate Year 2 and Year 3 basic rent if Year 1 changes
+      // Auto-calculate ALL years (2-5) basic rent if Year 1 changes
       if (year === 'year1' && field === 'basicRent') {
         const yr2 = calculateRental(value, 1);
         const yr3 = calculateRental(value, 2);
+        const yr4 = calculateRental(value, 3);
+        const yr5 = calculateRental(value, 4);
         
         updated.financial = {
           ...updated.financial,
           year2: { ...updated.financial.year2, basicRent: yr2 },
-          year3: { ...updated.financial.year3, basicRent: yr3 }
+          year3: { ...updated.financial.year3, basicRent: yr3 },
+          year4: { ...updated.financial.year4, basicRent: yr4 },
+          year5: { ...updated.financial.year5, basicRent: yr5 }
         };
       }
 
-      // Auto-calculate security for Year 2 and Year 3 based on Year 1
+      // Auto-calculate security for ALL years (2-5) based on Year 1
       if (year === 'year1' && field === 'security') {
         const year1Rent = parseFloat(updated.financial.year1.basicRent || 0);
         const securityRatio = year1Rent > 0 ? parseFloat(value || 0) / year1Rent : 0;
         
         const yr2Rent = parseFloat(updated.financial.year2.basicRent || 0);
         const yr3Rent = parseFloat(updated.financial.year3.basicRent || 0);
+        const yr4Rent = parseFloat(updated.financial.year4.basicRent || 0);
+        const yr5Rent = parseFloat(updated.financial.year5.basicRent || 0);
         
         updated.financial = {
           ...updated.financial,
@@ -629,8 +1087,73 @@ const LeaseDraftingSystem = () => {
           year3: { 
             ...updated.financial.year3, 
             security: securityRatio > 0 ? (yr3Rent * securityRatio).toFixed(2) : updated.financial.year3.security 
+          },
+          year4: { 
+            ...updated.financial.year4, 
+            security: securityRatio > 0 ? (yr4Rent * securityRatio).toFixed(2) : updated.financial.year4.security 
+          },
+          year5: { 
+            ...updated.financial.year5, 
+            security: securityRatio > 0 ? (yr5Rent * securityRatio).toFixed(2) : updated.financial.year5.security 
           }
         };
+      }
+
+      // Auto-calculate refuse for ALL years (2-5) based on Year 1 with configurable escalation
+      if (year === 'year1' && field === 'refuse') {
+        const yr1Refuse = parseFloat(value || 0);
+        const escRate = 1 + parseFloat(updated.financial.escalationRate || '6') / 100;
+        updated.financial = {
+          ...updated.financial,
+          year2: { ...updated.financial.year2, refuse: (yr1Refuse * escRate).toFixed(2) },
+          year3: { ...updated.financial.year3, refuse: (yr1Refuse * Math.pow(escRate, 2)).toFixed(2) },
+          year4: { ...updated.financial.year4, refuse: (yr1Refuse * Math.pow(escRate, 3)).toFixed(2) },
+          year5: { ...updated.financial.year5, refuse: (yr1Refuse * Math.pow(escRate, 4)).toFixed(2) }
+        };
+      }
+
+      // Auto-calculate rates for ALL years (2-5) based on Year 1 with configurable escalation
+      if (year === 'year1' && field === 'rates') {
+        const yr1Rates = parseFloat(value || 0);
+        const escRate = 1 + parseFloat(updated.financial.escalationRate || '6') / 100;
+        updated.financial = {
+          ...updated.financial,
+          year2: { ...updated.financial.year2, rates: (yr1Rates * escRate).toFixed(2) },
+          year3: { ...updated.financial.year3, rates: (yr1Rates * Math.pow(escRate, 2)).toFixed(2) },
+          year4: { ...updated.financial.year4, rates: (yr1Rates * Math.pow(escRate, 3)).toFixed(2) },
+          year5: { ...updated.financial.year5, rates: (yr1Rates * Math.pow(escRate, 4)).toFixed(2) }
+        };
+      }
+
+      // Auto-calculate FROM/TO dates for ALL years based on Year 1
+      if (year === 'year1' && field === 'from') {
+        const startDate = new Date(value);
+        if (!isNaN(startDate.getTime())) {
+          // Calculate dates for each year
+          for (let i = 2; i <= 5; i++) {
+            const yearStart = new Date(startDate);
+            yearStart.setFullYear(yearStart.getFullYear() + (i - 1));
+            updated.financial[`year${i}`] = {
+              ...updated.financial[`year${i}`],
+              from: yearStart.toISOString().split('T')[0]
+            };
+          }
+        }
+      }
+
+      if (year === 'year1' && field === 'to') {
+        const endDate = new Date(value);
+        if (!isNaN(endDate.getTime())) {
+          // Calculate TO dates for each year
+          for (let i = 2; i <= 5; i++) {
+            const yearEnd = new Date(endDate);
+            yearEnd.setFullYear(yearEnd.getFullYear() + (i - 1));
+            updated.financial[`year${i}`] = {
+              ...updated.financial[`year${i}`],
+              to: yearEnd.toISOString().split('T')[0]
+            };
+          }
+        }
       }
 
       return updated;
@@ -642,6 +1165,33 @@ const LeaseDraftingSystem = () => {
     const num = parseFloat(amount.toString().replace(/[^\d.]/g, ''));
     if (isNaN(num)) return '';
     return `R ${num.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  // Format address - filter out email addresses and phone numbers
+  const formatAddress = (addr) => {
+    if (!addr) return '';
+    let cleaned = addr;
+    // Cut off everything from these keywords onwards
+    cleaned = cleaned.replace(/\s*(Marks\s+)?Telephone\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Mobile\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Cell\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Phone\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Tel\s*[:.]?\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Fax\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Email\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*General\s+Contact\s*.*/gi, '');
+    cleaned = cleaned.replace(/\s*Contact\s*.*/gi, '');
+    // Remove any remaining phone number patterns
+    cleaned = cleaned.replace(/\b0\d{2,3}[\s\-]?\d{3}[\s\-]?\d{3,4}\b/g, '');
+    cleaned = cleaned.replace(/\b\d{10,12}\b/g, '');
+    // Remove email addresses
+    cleaned = cleaned.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '');
+    // Clean up and format
+    return cleaned
+      .split(/\n/)
+      .map(part => part.trim())
+      .filter(part => part && part.length > 1)
+      .join(', ');
   };
 
   const formatCurrencyDisplay = (amount) => {
@@ -664,7 +1214,7 @@ const LeaseDraftingSystem = () => {
     };
 
     // Create text-based table with underlines
-    const colWidths = [18, 18, 18, 25, 22, 22, 12, 12];
+    const colWidths = [20, 20, 20, 25, 25, 15, 15];
     const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
 
     let table = '\n';
@@ -674,7 +1224,6 @@ const LeaseDraftingSystem = () => {
       'BASIC RENT\nEXCL. VAT',
       'BASIC RENT\nINCL. VAT',
       'SECURITY\nEXCL. VAT',
-      'ELECTRICITY\nSEWERAGE & WATER',
       '*REFUSE AS AT\n01/06/2025\nEXCL. VAT',
       '*RATES AS AT\n01/06/2025\nEXCL. VAT',
       'FROM',
@@ -699,8 +1248,7 @@ const LeaseDraftingSystem = () => {
       formatCurrency(financial.year1.basicRent) || 'R [AMOUNT]',
       formatCurrency(calculateVAT(financial.year1.basicRent)) || 'R [AMOUNT]',
       formatCurrency(financial.year1.security) || 'R [AMOUNT]',
-      `ELECTRICITY\nSEWERAGE & WATER\n${financial.year1.sewerageWater || 'METERED OR % AGE OF\nEXPENSE'}`,
-      `*REFUSE -\n${formatCurrency(financial.year1.refuse) || 'R [AMOUNT]'} p/m`,
+      `ELECTRICITY\nSEWERAGE & WATER\n\n*${formatCurrency(financial.year1.refuse) || 'R [AMOUNT]'}\np/m`,
       `*${formatCurrency(financial.year1.rates) || 'R [AMOUNT]'}`,
       formatDate(financial.year1.from) || '[FROM]',
       formatDate(financial.year1.to) || '[TO]'
@@ -723,9 +1271,8 @@ const LeaseDraftingSystem = () => {
       formatCurrency(financial.year2.basicRent) || 'R [AMOUNT]',
       formatCurrency(calculateVAT(financial.year2.basicRent)) || 'R [AMOUNT]',
       formatCurrency(financial.year2.security) || 'R [AMOUNT]',
-      `ELECTRICITY\nSEWERAGE & WATER\n${financial.year2.sewerageWater || 'METERED OR % AGE OF\nEXPENSE'}`,
-      '* REFUSE\n*',
-      '',
+      `ELECTRICITY\nSEWERAGE & WATER\n\n*${formatCurrency(financial.year2.refuse) || 'R [AMOUNT]'}\np/m`,
+      `*${formatCurrency(financial.year2.rates) || 'R [AMOUNT]'}`,
       formatDate(financial.year2.from) || '[FROM]',
       formatDate(financial.year2.to) || '[TO]'
     ];
@@ -747,9 +1294,8 @@ const LeaseDraftingSystem = () => {
       formatCurrency(financial.year3.basicRent) || 'R [AMOUNT]',
       formatCurrency(calculateVAT(financial.year3.basicRent)) || 'R [AMOUNT]',
       formatCurrency(financial.year3.security) || 'R [AMOUNT]',
-      `ELECTRICITY\nSEWERAGE & WATER\n${financial.year3.sewerageWater || 'METERED OR % AGE OF\nEXPENSE'}`,
-      '* REFUSE\n*',
-      '',
+      `ELECTRICITY\nSEWERAGE & WATER\n\n*${formatCurrency(financial.year3.refuse) || 'R [AMOUNT]'}\np/m`,
+      `*${formatCurrency(financial.year3.rates) || 'R [AMOUNT]'}`,
       formatDate(financial.year3.from) || '[FROM]',
       formatDate(financial.year3.to) || '[TO]'
     ];
@@ -788,7 +1334,6 @@ const LeaseDraftingSystem = () => {
       <th style="background-color: #e0e0e0; padding: 8px; text-align: center; font-weight: bold; border: 1px solid #999;">BASIC RENT<br>EXCL. VAT</th>
       <th style="background-color: #e0e0e0; padding: 8px; text-align: center; font-weight: bold; border: 1px solid #999;">BASIC RENT<br>INCL. VAT</th>
       <th style="background-color: #e0e0e0; padding: 8px; text-align: center; font-weight: bold; border: 1px solid #999;">SECURITY<br>EXCL. VAT</th>
-      <th style="background-color: #e0e0e0; padding: 8px; text-align: center; font-weight: bold; border: 1px solid #999;">ELECTRICITY<br>SEWERAGE & WATER</th>
       <th style="background-color: #e0e0e0; padding: 8px; text-align: center; font-weight: bold; border: 1px solid #999;">*REFUSE AS AT<br>01/06/2025<br>EXCL. VAT</th>
       <th style="background-color: #e0e0e0; padding: 8px; text-align: center; font-weight: bold; border: 1px solid #999;">*RATES AS AT<br>01/06/2025<br>EXCL. VAT</th>
       <th style="background-color: #e0e0e0; padding: 8px; text-align: center; font-weight: bold; border: 1px solid #999;">FROM</th>
@@ -800,8 +1345,7 @@ const LeaseDraftingSystem = () => {
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year1.basicRent) || 'R [AMOUNT]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(calculateVAT(financial.year1.basicRent)) || 'R [AMOUNT]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year1.security) || 'R [AMOUNT]'}</td>
-      <td style="padding: 8px; text-align: center; border: 1px solid #999;">ELECTRICITY<br>SEWERAGE & WATER<br>${financial.year1.sewerageWater || 'METERED OR % AGE OF<br>EXPENSE'}</td>
-      <td style="padding: 8px; text-align: center; border: 1px solid #999;">*REFUSE -<br>${formatCurrency(financial.year1.refuse) || 'R [AMOUNT]'} p/m</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatCurrency(financial.year1.refuse) || 'R [AMOUNT]'}<br>p/m</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">*${formatCurrency(financial.year1.rates) || 'R [AMOUNT]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year1.from) || '[FROM]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year1.to) || '[TO]'}</td>
@@ -810,9 +1354,8 @@ const LeaseDraftingSystem = () => {
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year2.basicRent) || 'R [AMOUNT]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(calculateVAT(financial.year2.basicRent)) || 'R [AMOUNT]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year2.security) || 'R [AMOUNT]'}</td>
-      <td style="padding: 8px; text-align: center; border: 1px solid #999;">ELECTRICITY<br>SEWERAGE & WATER<br>${financial.year2.sewerageWater || 'METERED OR % AGE OF<br>EXPENSE'}</td>
-      <td style="padding: 8px; text-align: center; border: 1px solid #999;">* REFUSE<br>*</td>
-      <td style="padding: 8px; text-align: center; border: 1px solid #999;"></td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatCurrency(financial.year2.refuse) || 'R [AMOUNT]'}<br>p/m</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">*${formatCurrency(financial.year2.rates) || 'R [AMOUNT]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year2.from) || '[FROM]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year2.to) || '[TO]'}</td>
     </tr>
@@ -820,11 +1363,28 @@ const LeaseDraftingSystem = () => {
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year3.basicRent) || 'R [AMOUNT]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(calculateVAT(financial.year3.basicRent)) || 'R [AMOUNT]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year3.security) || 'R [AMOUNT]'}</td>
-      <td style="padding: 8px; text-align: center; border: 1px solid #999;">ELECTRICITY<br>SEWERAGE & WATER<br>${financial.year3.sewerageWater || 'METERED OR % AGE OF<br>EXPENSE'}</td>
-      <td style="padding: 8px; text-align: center; border: 1px solid #999;">* REFUSE<br>*</td>
-      <td style="padding: 8px; text-align: center; border: 1px solid #999;"></td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatCurrency(financial.year3.refuse) || 'R [AMOUNT]'}<br>p/m</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">*${formatCurrency(financial.year3.rates) || 'R [AMOUNT]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year3.from) || '[FROM]'}</td>
       <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year3.to) || '[TO]'}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year4?.basicRent) || 'R [AMOUNT]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(calculateVAT(financial.year4?.basicRent)) || 'R [AMOUNT]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year4?.security) || 'R [AMOUNT]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatCurrency(financial.year4?.refuse) || 'R [AMOUNT]'}<br>p/m</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">*${formatCurrency(financial.year4?.rates) || 'R [AMOUNT]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year4?.from) || '[FROM]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year4?.to) || '[TO]'}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year5?.basicRent) || 'R [AMOUNT]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(calculateVAT(financial.year5?.basicRent)) || 'R [AMOUNT]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatCurrency(financial.year5?.security) || 'R [AMOUNT]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">ELECTRICITY<br>SEWERAGE & WATER<br><br>*${formatCurrency(financial.year5?.refuse) || 'R [AMOUNT]'}<br>p/m</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">*${formatCurrency(financial.year5?.rates) || 'R [AMOUNT]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year5?.from) || '[FROM]'}</td>
+      <td style="padding: 8px; text-align: center; border: 1px solid #999;">${formatDate(financial.year5?.to) || '[TO]'}</td>
     </tr>
   </tbody>
 </table>`;
@@ -897,8 +1457,6 @@ THE PREMISES ARE HIRED BY THE TENANT FROM THE LANDLORD SUBJECT TO THE TERMS AND 
 
 1.1 THE LANDLORD: ${landlord.name || '[LANDLORD NAME]'}
 
-TEL: ${landlord.phone || '[PHONE]'}
-
 REGISTRATION NO: ${landlord.regNo || '[REG NO]'}
 
 VAT REGISTRATION NO: ${landlord.vatNo || '[VAT NO]'}
@@ -913,9 +1471,9 @@ REGISTRATION NO: ${tenant.regNo || '[REG NO]'}
 
 VAT REGISTRATION NO: ${tenant.vatNo || '[VAT NO]'}
 
-POSTAL: ${tenant.postalAddress ? tenant.postalAddress.split(',').map(addr => addr.trim()).join(', ') : '[POSTAL ADDRESS]'}
+POSTAL: ${tenant.postalAddress ? formatAddress(tenant.postalAddress) : '[POSTAL ADDRESS]'}
 
-PHYSICAL: ${tenant.physicalAddress ? tenant.physicalAddress.split(',').map(addr => addr.trim()).join(', ') : '[PHYSICAL ADDRESS]'}
+PHYSICAL: ${tenant.physicalAddress ? formatAddress(tenant.physicalAddress) : '[PHYSICAL ADDRESS]'}
 
 TRADING AS: ${tenant.tradingAs || tenant.name || '[TRADING AS]'}
 
@@ -986,19 +1544,9 @@ ${useHTML ? generateMonthlyRentalTableHTML() : generateMonthlyRentalTableText()}
 
 ${financial.advertisingContribution || 'N/A'}
 
-1.16 TENANT'S BANK ACCOUNT DETAILS: ${(() => {
-    const bankDetails = [];
-    if (tenant.bankName) bankDetails.push(`BANK: ${tenant.bankName}`);
-    if (tenant.bankAccountNumber) bankDetails.push(`A/C NO: ${tenant.bankAccountNumber}`);
-    if (tenant.bankBranchCode) bankDetails.push(`BRANCH CODE: ${tenant.bankBranchCode}`);
-    if (tenant.bankAccountType) bankDetails.push(`ACCOUNT TYPE: ${tenant.bankAccountType}`);
-    if (tenant.bankAccountHolder) bankDetails.push(`ACCOUNT HOLDER: ${tenant.bankAccountHolder}`);
-    return bankDetails.length > 0 ? bankDetails.join(', ') : (financial.tenantBankAccount || 'N/A');
-  })()}
+1.16 THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS LEASE: ${formatCurrency(financial.leaseFee) || formatCurrency('750.00')} (EXCL. VAT)
 
-1.17 THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS LEASE: ${formatCurrency(financial.leaseFee) || formatCurrency('750.00')} (EXCL. VAT)
-
-1.18 THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A"; "B"; "C"; "D"
+1.17 THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A"; "B"; "C"; "D"
 
 2 INITIAL HERE: _________
 
@@ -1055,12 +1603,23 @@ Generated by Automated Lease Drafting System
   };
 
   // Store documents with lease agreement
-  const storeLeaseWithDocuments = async (leaseText, leaseData) => {
+  const storeLeaseWithDocuments = async (leaseText, leaseData, currentDocuments) => {
     try {
       const storedDocuments = {};
       
+      // Use passed documents or fall back to state
+      const docsToStore = currentDocuments || documents;
+      
+      // Debug: Log what documents we're trying to store
+      console.log('📁 Storing lease with documents:', {
+        landlordCIPC: docsToStore.landlordCIPC?.length || 0,
+        tenantCIPC: docsToStore.tenantCIPC?.length || 0,
+        tenantID: docsToStore.tenantID?.length || 0,
+        suretyID: docsToStore.suretyID?.length || 0
+      });
+      
       // Convert all uploaded documents to base64
-      for (const [key, files] of Object.entries(documents)) {
+      for (const [key, files] of Object.entries(docsToStore)) {
         if (files && Array.isArray(files) && files.length > 0) {
           storedDocuments[key] = [];
           for (const file of files) {
@@ -1094,6 +1653,10 @@ Generated by Automated Lease Drafting System
         }
       };
 
+      // Debug: Log stored documents count
+      const totalDocs = Object.values(storedDocuments).reduce((sum, arr) => sum + arr.length, 0);
+      console.log('✅ Documents stored:', totalDocs, 'files in', Object.keys(storedDocuments).length, 'categories');
+      
       // Store in localStorage
       const existingPackages = JSON.parse(localStorage.getItem('leasePackages') || '[]');
       existingPackages.push(leasePackage);
@@ -1132,8 +1695,8 @@ Generated by Automated Lease Drafting System
         return line.replace(/^%+/, '').replace(/%+$/, '');
       }).join('\n');
       
-      // Store lease with documents
-      await storeLeaseWithDocuments(leaseText, extractedData);
+      // Store lease with documents (pass current documents to avoid stale closure)
+      await storeLeaseWithDocuments(leaseText, extractedData, documents);
       
       // Download the lease
       const blob = new Blob([leaseText], { type: 'text/plain' });
@@ -1161,10 +1724,6 @@ Generated by Automated Lease Drafting System
   const exportLeasePDF = async () => {
     setIsGeneratingPDF(true);
     try {
-      // Store lease with documents
-      const leaseText = generateLeaseDocument();
-      await storeLeaseWithDocuments(leaseText, extractedData);
-      
       // Try server-side PDF generation first (Puppeteer - better quality)
       try {
         toast.info('Generating PDF... This may take a moment.');
@@ -1186,6 +1745,13 @@ Generated by Automated Lease Drafting System
         link.download = `Lease_Agreement_${extractedData.tenant.name || 'Draft'}_${new Date().toISOString().split('T')[0]}.pdf`;
         document.body.appendChild(link);
         link.click();
+        
+        // Log activity
+        logActivity(ACTIVITY_TYPES.GENERATE_PDF, { 
+          tenant: extractedData.tenant.name || 'Draft',
+          landlord: extractedData.landlord.name || 'Unknown'
+        });
+        
         // Small delay before cleanup to ensure download starts
         setTimeout(() => {
           document.body.removeChild(link);
@@ -1197,20 +1763,31 @@ Generated by Automated Lease Drafting System
         // Store lease with documents for future tracking
         try {
           const leaseText = generateLeaseDocument();
-          await storeLeaseWithDocuments(leaseText, extractedData);
-          toast.info('Lease and documents saved leases can be accessed from "Saved Leases" button');
+          await storeLeaseWithDocuments(leaseText, extractedData, documents);
+          toast.info('Lease and documents saved! Access from "Saved Leases" button');
         } catch (error) {
           console.error('Error storing lease with documents:', error);
         }
         
-        // Add to history
+        // Add to history (including uploaded documents)
         try {
+          // Convert uploaded documents to metadata (can't store actual files in localStorage)
+          const documentsMeta = {
+            landlordCIPC: documents.landlordCIPC.map(f => ({ name: f.name, size: f.size, type: f.type })),
+            tenantCIPC: documents.tenantCIPC.map(f => ({ name: f.name, size: f.size, type: f.type })),
+            tenantID: documents.tenantID.map(f => ({ name: f.name, size: f.size, type: f.type })),
+            suretyID: documents.suretyID.map(f => ({ name: f.name, size: f.size, type: f.type }))
+          };
+          
           const historyItem = {
             id: Date.now(),
             name: extractedData.tenant.name || 'Draft',
             date: new Date().toISOString(),
+            type: 'PDF',
             leaseText: generateLeaseDocument(),
-            leaseData: { ...extractedData }
+            leaseData: { ...extractedData },
+            documents: documentsMeta,
+            totalDocuments: Object.values(documentsMeta).flat().length
           };
           const existingHistory = JSON.parse(localStorage.getItem('leaseHistory') || '[]');
           existingHistory.push(historyItem);
@@ -1368,7 +1945,6 @@ Generated by Automated Lease Drafting System
     // 1.1 THE LANDLORD
     renderSectionTitle('1.1 THE LANDLORD:');
     renderValue(landlord.name || '');
-    renderField('TEL:', landlord.phone || '');
     renderField('REGISTRATION NO:', landlord.regNo || '');
     renderField('VAT REGISTRATION NO:', landlord.vatNo || '');
     renderField('BANKING DETAILS:', `BANK: ${landlord.bank || ''}, ${landlord.branch || ''}`);
@@ -1380,8 +1956,8 @@ Generated by Automated Lease Drafting System
     renderValue(tenant.name || '');
     renderField('REGISTRATION NO:', tenant.regNo || '');
     renderField('VAT REGISTRATION NO:', tenant.vatNo || '');
-    renderField('POSTAL:', tenant.postalAddress || '');
-    renderField('PHYSICAL:', tenant.physicalAddress || '');
+    renderField('POSTAL:', formatAddress(tenant.postalAddress) || '');
+    renderField('PHYSICAL:', formatAddress(tenant.physicalAddress) || '');
     renderField('TRADING AS:', tenant.tradingAs || tenant.name || '');
     
     // 1.3-1.8 Premises sections (close together)
@@ -1542,7 +2118,7 @@ Generated by Automated Lease Drafting System
     renderField('ADDRESS:', surety.address || '');
     
     // 1 INITIAL HERE
-    yPosition += SPACING.section;
+    yPosition += SPACING.section + 15;
     checkPageBreak();
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
@@ -1561,7 +2137,7 @@ Generated by Automated Lease Drafting System
     yPosition += SPACING.sectionTitle + SPACING.table;
     
     const tableMargin = margin;
-    const rentalColWidth = (pageWidth - 2 * tableMargin) / 8;
+    const rentalColWidth = (pageWidth - 2 * tableMargin) / 7;
     const rentalHeaderHeight = 20;
     
     // Table header
@@ -1571,8 +2147,8 @@ Generated by Automated Lease Drafting System
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     const headers = ['BASIC RENT\nEXCL. VAT', 'BASIC RENT\nINCL. VAT', 'SECURITY\nEXCL. VAT', 
-                     'ELECTRICITY\nSEWERAGE & WATER', 'REFUSE\n(AS AT 01/06/2025)', 
-                     'RATES\n(AS AT 01/06/2025)', 'FROM', 'TO'];
+                     '*REFUSE AS AT\n01/06/2025\nEXCL. VAT', 
+                     '*RATES AS AT\n01/06/2025\nEXCL. VAT', 'FROM', 'TO'];
     
     headers.forEach((header, i) => {
       const xPos = tableMargin + i * rentalColWidth;
@@ -1590,18 +2166,36 @@ Generated by Automated Lease Drafting System
       return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
     };
     
-    const rows = [
+    // Build rows dynamically based on lease years
+    const leaseYears = parseInt(lease.years) || 0;
+    const leaseMonths = parseInt(lease.months) || 0;
+    const totalYears = leaseYears + (leaseMonths > 0 ? 1 : 0);
+    
+    const allRows = [
       [formatCurrency(financial.year1.basicRent), formatCurrency(calculateVAT(financial.year1.basicRent)), 
-       formatCurrency(financial.year1.security), financial.year1.sewerageWater || 'METERED OR % OF EXPENSE',
-       `${formatCurrency(financial.year1.refuse)} p/m`, formatCurrency(financial.year1.rates),
+       formatCurrency(financial.year1.security), `ELECTRICITY\nSEWERAGE & WATER\n\n*${formatCurrency(financial.year1.refuse)}\np/m`,
+       `*${formatCurrency(financial.year1.rates)}`,
        formatDatePDF(financial.year1.from), formatDatePDF(financial.year1.to)],
       [formatCurrency(financial.year2.basicRent), formatCurrency(calculateVAT(financial.year2.basicRent)),
-       formatCurrency(financial.year2.security), financial.year2.sewerageWater || 'METERED OR % OF EXPENSE',
-       '*', '*', formatDatePDF(financial.year2.from), formatDatePDF(financial.year2.to)],
+       formatCurrency(financial.year2.security), `ELECTRICITY\nSEWERAGE & WATER\n\n*${formatCurrency(financial.year2.refuse)}\np/m`,
+       `*${formatCurrency(financial.year2.rates)}`,
+       formatDatePDF(financial.year2.from), formatDatePDF(financial.year2.to)],
       [formatCurrency(financial.year3.basicRent), formatCurrency(calculateVAT(financial.year3.basicRent)),
-       formatCurrency(financial.year3.security), financial.year3.sewerageWater || 'METERED OR % OF EXPENSE',
-       '*', '*', formatDatePDF(financial.year3.from), formatDatePDF(financial.year3.to)]
+       formatCurrency(financial.year3.security), `ELECTRICITY\nSEWERAGE & WATER\n\n*${formatCurrency(financial.year3.refuse)}\np/m`,
+       `*${formatCurrency(financial.year3.rates)}`,
+       formatDatePDF(financial.year3.from), formatDatePDF(financial.year3.to)],
+      [formatCurrency(financial.year4?.basicRent), formatCurrency(calculateVAT(financial.year4?.basicRent)),
+       formatCurrency(financial.year4?.security), `ELECTRICITY\nSEWERAGE & WATER\n\n*${formatCurrency(financial.year4?.refuse)}\np/m`,
+       `*${formatCurrency(financial.year4?.rates)}`,
+       formatDatePDF(financial.year4?.from), formatDatePDF(financial.year4?.to)],
+      [formatCurrency(financial.year5?.basicRent), formatCurrency(calculateVAT(financial.year5?.basicRent)),
+       formatCurrency(financial.year5?.security), `ELECTRICITY\nSEWERAGE & WATER\n\n*${formatCurrency(financial.year5?.refuse)}\np/m`,
+       `*${formatCurrency(financial.year5?.rates)}`,
+       formatDatePDF(financial.year5?.from), formatDatePDF(financial.year5?.to)]
     ];
+    
+    // Only show rows based on initial lease period (section 1.9)
+    const rows = allRows.slice(0, Math.max(totalYears, 1));
     
     rows.forEach((row, rowIndex) => {
       checkPageBreak(25);
@@ -1616,7 +2210,7 @@ Generated by Automated Lease Drafting System
       // Draw borders
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.5);
-      for (let i = 0; i <= 8; i++) {
+      for (let i = 0; i <= 7; i++) {
         const x = tableMargin + i * rentalColWidth;
         doc.line(x, startY, x, startY + rentalRowHeight);
       }
@@ -1673,41 +2267,37 @@ Generated by Automated Lease Drafting System
     yPosition += SPACING.field;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text('1.16 TENANT\'S BANK ACCOUNT DETAILS:', margin, yPosition);
-    yPosition += SPACING.sectionTitle;
-    const bankDetails = [];
-    if (tenant.bankName) bankDetails.push(`BANK: ${tenant.bankName}`);
-    if (tenant.bankAccountNumber) bankDetails.push(`A/C NO: ${tenant.bankAccountNumber}`);
-    if (tenant.bankBranchCode) bankDetails.push(`BRANCH CODE: ${tenant.bankBranchCode}`);
-    if (tenant.bankAccountType) bankDetails.push(`ACCOUNT TYPE: ${tenant.bankAccountType}`);
-    if (tenant.bankAccountHolder) bankDetails.push(`ACCOUNT HOLDER: ${tenant.bankAccountHolder}`);
-    renderValue(bankDetails.length > 0 ? bankDetails.join(', ') : (financial.tenantBankAccount || 'N/A'));
-    
-    yPosition += SPACING.field;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('1.17 LEASE FEES PAYABLE ON SIGNATURE:', margin, yPosition);
+    doc.text('1.16 LEASE FEES PAYABLE ON SIGNATURE:', margin, yPosition);
     yPosition += SPACING.sectionTitle;
     renderValue(`${formatCurrency(financial.leaseFee || '750.00')} (EXCL. VAT)`);
     
     yPosition += SPACING.field;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text('1.18 ANNEXURES:', margin, yPosition);
+    doc.text('1.17 ANNEXURES:', margin, yPosition);
     yPosition += SPACING.sectionTitle;
     renderValue('"A"; "B"; "C"; "D"');
     
     // 2 INITIAL HERE
-    yPosition += SPACING.section;
+    yPosition += SPACING.section + 15;
     checkPageBreak();
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-      doc.text('2 INITIAL HERE: _________', pageWidth - margin, yPosition, { align: 'right' });
+    doc.text('2 INITIAL HERE: _________', pageWidth - margin, yPosition, { align: 'right' });
       
       // Save PDF
       doc.save(`Lease_Agreement_${extractedData.tenant.name || 'Draft'}_${new Date().toISOString().split('T')[0]}.pdf`);
       
       toast.success('PDF generated successfully!');
+      
+      // Store lease with documents for future tracking (client-side fallback)
+      try {
+        const leaseText = generateLeaseDocument();
+        await storeLeaseWithDocuments(leaseText, extractedData, documents);
+        toast.info('Lease and documents saved! Access from "Saved Leases" button');
+      } catch (storeError) {
+        console.error('Error storing lease:', storeError);
+      }
       
       // Clear form immediately after generating PDF
       handleClearAllForms(true);
@@ -1739,12 +2329,55 @@ Generated by Automated Lease Drafting System
       link.download = `Lease_Agreement_${extractedData.tenant.name || 'Draft'}_${new Date().toISOString().split('T')[0]}.docx`;
       document.body.appendChild(link);
       link.click();
+      
+      // Log activity
+      logActivity(ACTIVITY_TYPES.GENERATE_WORD, { 
+        tenant: extractedData.tenant.name || 'Draft',
+        landlord: extractedData.landlord.name || 'Unknown'
+      });
+      
       setTimeout(() => {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       }, 100);
       
       toast.success('Word document generated and downloaded successfully!');
+      
+      // Store lease with documents for Saved Leases
+      try {
+        const leaseText = generateLeaseDocument();
+        await storeLeaseWithDocuments(leaseText, extractedData, documents);
+        toast.info('Lease and documents saved! Access from "Saved Leases" button');
+      } catch (storeError) {
+        console.error('Error storing lease:', storeError);
+      }
+      
+      // Add to history (including uploaded documents)
+      try {
+        const documentsMeta = {
+          landlordCIPC: documents.landlordCIPC.map(f => ({ name: f.name, size: f.size, type: f.type })),
+          tenantCIPC: documents.tenantCIPC.map(f => ({ name: f.name, size: f.size, type: f.type })),
+          tenantID: documents.tenantID.map(f => ({ name: f.name, size: f.size, type: f.type })),
+          suretyID: documents.suretyID.map(f => ({ name: f.name, size: f.size, type: f.type }))
+        };
+        
+        const historyItem = {
+          id: Date.now(),
+          name: extractedData.tenant.name || 'Draft',
+          date: new Date().toISOString(),
+          type: 'Word',
+          leaseData: { ...extractedData },
+          documents: documentsMeta,
+          totalDocuments: Object.values(documentsMeta).flat().length
+        };
+        const existingHistory = JSON.parse(localStorage.getItem('leaseHistory') || '[]');
+        existingHistory.push(historyItem);
+        const trimmedHistory = existingHistory.slice(-50);
+        localStorage.setItem('leaseHistory', JSON.stringify(trimmedHistory));
+        setLeaseHistory(trimmedHistory);
+      } catch (err) {
+        console.error('Error saving to history:', err);
+      }
       
       // Clear the form after successful generation
       handleClearAllForms(true);
@@ -1756,6 +2389,230 @@ Generated by Automated Lease Drafting System
     }
   };
 
+  // Export Deposit Invoice PDF
+  const exportInvoice = async () => {
+    try {
+      toast.info('Generating deposit invoice...');
+      const blob = await leasesAPI.generateInvoice(extractedData);
+      
+      if (!blob || blob.size === 0) {
+        throw new Error('Invoice generation returned empty file');
+      }
+      
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Deposit_Invoice_${extractedData.tenant.name || 'Tenant'}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 100);
+      
+      toast.success('Deposit invoice generated successfully!');
+    } catch (error) {
+      toast.error(`Failed to generate invoice: ${error.message || 'Please try again.'}`);
+      console.error('Invoice generation error:', error);
+    }
+  };
+
+  // Handle Utility Statement Upload
+  const handleUtilityUpload = async (file) => {
+    if (!file) return;
+    
+    if (file.type !== 'application/pdf') {
+      setUtilityError('Please upload a PDF file');
+      return;
+    }
+    
+    setUtilityFile(file);
+    setIsParsingUtility(true);
+    setUtilityError(null);
+    setUtilitySuccess(false);
+    
+    try {
+      const result = await leasesAPI.parseUtilityStatement(file);
+      
+      if (result.success && result.data) {
+        setUtilityData(result.data);
+        setUtilitySuccess(true);
+        
+        // Auto-populate the monthly invoice charges
+        setMonthlyInvoiceData(prev => ({
+          ...prev,
+          charges: {
+            ...prev.charges,
+            rent: prev.charges.rent || extractedData.financial?.year1?.basicRent || '',
+            electricity: result.data.electricity || prev.charges.electricity || '',
+            water: result.data.water || prev.charges.water || '',
+            sewerage: result.data.sewerage || prev.charges.sewerage || '',
+            municipal: result.data.municipal || prev.charges.municipal || '',
+            refuse: result.data.refuse || extractedData.financial?.year1?.refuse || prev.charges.refuse || ''
+          }
+        }));
+        
+        toast.success('Utility statement parsed! Charges auto-populated.');
+      } else {
+        setUtilityError('Could not extract utility data from this document');
+      }
+    } catch (error) {
+      console.error('Utility statement parsing error:', error);
+      setUtilityError(error.message || 'Failed to parse utility statement');
+    } finally {
+      setIsParsingUtility(false);
+    }
+  };
+
+  // Remove utility file
+  const handleRemoveUtilityFile = () => {
+    setUtilityFile(null);
+    setUtilityData(null);
+    setUtilityError(null);
+    setUtilitySuccess(false);
+  };
+
+  // ===== USER MANAGEMENT FUNCTIONS =====
+  const loadUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const result = await usersAPI.getAll();
+      setUsers(result.users || []);
+    } catch (error) {
+      console.error('Failed to load users:', error);
+      toast.error('Failed to load users');
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  const handleCreateUser = async () => {
+    if (!newUser.email || !newUser.password) {
+      toast.error('Email and password are required');
+      return;
+    }
+
+    try {
+      await usersAPI.create(newUser);
+      toast.success('User created successfully');
+      setNewUser({ email: '', password: '', name: '', organization: '', role: 'user' });
+      loadUsers();
+    } catch (error) {
+      toast.error(error.message || 'Failed to create user');
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to delete this user?')) {
+      return;
+    }
+
+    try {
+      await usersAPI.delete(userId);
+      toast.success('User deleted successfully');
+      loadUsers();
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete user');
+    }
+  };
+
+  const openUserManagement = () => {
+    setShowUserManagement(true);
+    loadUsers();
+  };
+
+  // Generate Monthly Invoice
+  const generateMonthlyInvoicePDF = async () => {
+    setIsGeneratingMonthlyInvoice(true);
+    try {
+      toast.info('Generating monthly invoice...');
+      
+      // Build charges array from the form data
+      const charges = [];
+      const chargeDate = monthlyInvoiceData.invoiceMonth + '-01';
+      
+      if (monthlyInvoiceData.charges.rent) {
+        charges.push({ date: chargeDate, description: 'Rent', exclusive: monthlyInvoiceData.charges.rent });
+      }
+      if (monthlyInvoiceData.charges.electricity) {
+        charges.push({ date: chargeDate, description: 'Electricity', exclusive: monthlyInvoiceData.charges.electricity });
+      }
+      if (monthlyInvoiceData.charges.water) {
+        charges.push({ date: chargeDate, description: 'Water', exclusive: monthlyInvoiceData.charges.water });
+      }
+      if (monthlyInvoiceData.charges.sewerage) {
+        charges.push({ date: chargeDate, description: 'Sewerage', exclusive: monthlyInvoiceData.charges.sewerage });
+      }
+      if (monthlyInvoiceData.charges.municipal) {
+        charges.push({ date: chargeDate, description: 'Municipal Charges', exclusive: monthlyInvoiceData.charges.municipal });
+      }
+      if (monthlyInvoiceData.charges.refuse) {
+        charges.push({ date: chargeDate, description: 'Refuse', exclusive: monthlyInvoiceData.charges.refuse });
+      }
+      
+      const invoicePayload = {
+        managementCompany: {
+          name: extractedData.landlord.name || 'BENAV PROPERTIES (PTY) LTD',
+          regNo: extractedData.landlord.regNo || '2018/060720/07',
+          vatNo: extractedData.landlord.vatNo || '4200288134',
+          phone: extractedData.landlord.phone || '0861 999 118',
+          address: '22 Stirrup Lane\nWoodmead Office Park\nWoodmead'
+        },
+        property: {
+          name: extractedData.premises.buildingName || 'Property',
+          code: '001',
+          unitNo: extractedData.premises.unit || 'Unit'
+        },
+        tenant: {
+          name: extractedData.tenant.name || '',
+          regNo: extractedData.tenant.regNo || '',
+          vatNo: extractedData.tenant.vatNo || ''
+        },
+        contact: {
+          name: 'Accounts Department',
+          email: 'accounts@benavproperties.co.za'
+        },
+        invoiceMonth: monthlyInvoiceData.invoiceMonth,
+        invoiceDate: new Date().toISOString(),
+        tenantCode: '00001',
+        charges: charges,
+        balanceBF: parseFloat(monthlyInvoiceData.balanceBF) || 0,
+        bankGuarantee: 0,
+        bankDetails: {
+          bank: `${extractedData.landlord.bank || 'NEDBANK'} - ${extractedData.landlord.branch || 'NORTHERN GAUTENG'}`,
+          branchCode: extractedData.landlord.branchCode || '146905',
+          accountName: extractedData.landlord.name || '',
+          accountNumber: extractedData.landlord.accountNo || ''
+        }
+      };
+      
+      const blob = await leasesAPI.generateMonthlyInvoice(invoicePayload);
+      
+      if (!blob || blob.size === 0) {
+        throw new Error('Monthly invoice generation returned empty file');
+      }
+      
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Monthly_Invoice_${extractedData.tenant.name || 'Tenant'}_${monthlyInvoiceData.invoiceMonth}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 100);
+      
+      toast.success('Monthly invoice generated successfully!');
+      setShowMonthlyInvoice(false);
+    } catch (error) {
+      toast.error(`Failed to generate monthly invoice: ${error.message || 'Please try again.'}`);
+      console.error('Monthly invoice generation error:', error);
+    } finally {
+      setIsGeneratingMonthlyInvoice(false);
+    }
+  };
+
   // Show login if not authenticated (AFTER all hooks)
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;
@@ -1764,6 +2621,527 @@ Generated by Automated Lease Drafting System
   return (
     <>
       <ToastContainer toasts={toasts} removeToast={removeToast} />
+      
+      {/* Admin Panel Modal */}
+      <AdminPanel 
+        isOpen={showAdminPanel} 
+        onClose={() => setShowAdminPanel(false)} 
+        currentUser={currentUser}
+      />
+
+      {/* Help Request Modal */}
+      {showHelpModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <HelpCircle size={28} />
+                  <div>
+                    <h2 className="text-xl font-bold">Need Help?</h2>
+                    <p className="text-amber-100 text-sm">Send a message to the admin</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowHelpModal(false)}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-4">
+                Describe what you need help with. The admin will respond as soon as possible.
+              </p>
+              <textarea
+                value={helpMessage}
+                onChange={(e) => setHelpMessage(e.target.value)}
+                placeholder="e.g., I forgot my password, I need help uploading a document, I can't generate a PDF..."
+                className="w-full h-32 px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none"
+              />
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={handleSubmitHelpRequest}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 font-medium transition-all"
+                >
+                  <Send size={18} />
+                  Send Request
+                </button>
+                <button
+                  onClick={() => setShowHelpModal(false)}
+                  className="px-4 py-3 border-2 border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-4 text-center">
+                💡 Your request will appear in the Admin Panel for immediate attention
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* User Management Modal (Legacy - keeping for compatibility) */}
+      {showUserManagement && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Users size={28} />
+                  <div>
+                    <h2 className="text-xl font-bold">User Management</h2>
+                    <p className="text-blue-200 text-sm">Create and manage system users</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowUserManagement(false)}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              {/* Create New User Section */}
+              <div className="mb-6 p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border-2 border-green-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <UserPlus className="text-green-600" size={20} />
+                  <h3 className="font-bold text-green-800">Create New User</h3>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                    <input
+                      type="email"
+                      value={newUser.email}
+                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                      placeholder="user@example.com"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+                    <input
+                      type="password"
+                      value={newUser.password}
+                      onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                      placeholder="••••••••"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={newUser.name}
+                      onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                      placeholder="John Doe"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Organization</label>
+                    <input
+                      type="text"
+                      value={newUser.organization}
+                      onChange={(e) => setNewUser({ ...newUser, organization: e.target.value })}
+                      placeholder="Company Name"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                    <select
+                      value={newUser.role}
+                      onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="user">User</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      onClick={handleCreateUser}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                    >
+                      <UserPlus size={18} />
+                      Create User
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Existing Users List */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                    <Users size={20} className="text-blue-600" />
+                    Existing Users ({users.length})
+                  </h3>
+                  <button
+                    onClick={loadUsers}
+                    disabled={isLoadingUsers}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    {isLoadingUsers ? 'Loading...' : 'Refresh'}
+                  </button>
+                </div>
+                
+                {isLoadingUsers ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="animate-spin text-blue-600" size={32} />
+                  </div>
+                ) : users.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No users found. Create your first user above.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {users.map((user) => (
+                      <div
+                        key={user.id}
+                        className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200 hover:border-blue-300 transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold">
+                            {(user.name || user.email)[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-gray-900">{user.name || user.email.split('@')[0]}</p>
+                            <p className="text-sm text-gray-500">{user.email}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            user.role === 'admin' 
+                              ? 'bg-purple-100 text-purple-700' 
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {user.role || 'user'}
+                          </span>
+                          {user.organization && (
+                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                              {user.organization}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleDeleteUser(user.id)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete user"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Monthly Invoice Modal */}
+      {showMonthlyInvoice && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-gradient-to-r from-purple-600 to-violet-700 text-white p-5 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Calendar size={28} />
+                  <div>
+                    <h2 className="text-xl font-bold">Generate Monthly Invoice</h2>
+                    <p className="text-purple-200 text-sm">Professional Invoice Format</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowMonthlyInvoice(false)}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              {/* UPLOAD UTILITY STATEMENT - PRIMARY ACTION */}
+              <div className="mb-6 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border-2 border-emerald-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <Zap className="text-emerald-600" size={20} />
+                  <h3 className="font-bold text-emerald-800">Quick: Upload Utility Statement</h3>
+                </div>
+                <p className="text-sm text-emerald-700 mb-3">Upload municipal/utility PDF to auto-fill Electricity, Water & Sewerage</p>
+                
+                <div
+                  className={`relative border-2 border-dashed rounded-xl p-4 text-center transition-all cursor-pointer
+                    ${isParsingUtility ? 'border-emerald-400 bg-emerald-50' :
+                      utilitySuccess ? 'border-green-400 bg-green-50' :
+                      utilityError ? 'border-red-400 bg-red-50' :
+                      'border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50/50'}`}
+                  onClick={() => document.getElementById('utilityStatementInput').click()}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const file = e.dataTransfer.files[0];
+                    if (file) handleUtilityUpload(file);
+                  }}
+                >
+                  <input
+                    id="utilityStatementInput"
+                    type="file"
+                    accept=".pdf"
+                    className="hidden"
+                    onChange={(e) => handleUtilityUpload(e.target.files[0])}
+                  />
+                  
+                  {isParsingUtility ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <Loader2 className="text-emerald-600 animate-spin" size={20} />
+                      <span className="text-emerald-800 font-medium">Extracting utility readings...</span>
+                    </div>
+                  ) : utilitySuccess ? (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="text-green-600" size={20} />
+                        <span className="text-green-800 font-medium">✓ Utilities auto-filled!</span>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRemoveUtilityFile(); }}
+                        className="p-1 hover:bg-red-100 rounded-full text-gray-500 hover:text-red-500"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2">
+                      <Upload className="text-emerald-600" size={20} />
+                      <span className="text-emerald-700">Drop utility statement PDF or click to browse</span>
+                    </div>
+                  )}
+                </div>
+                
+                {utilityError && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-sm text-red-700">
+                    <AlertCircle size={16} />
+                    {utilityError}
+                  </div>
+                )}
+                
+                {utilitySuccess && utilityData && (
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    {utilityData.electricity && (
+                      <div className="bg-yellow-100 px-2 py-1 rounded-lg text-yellow-800">
+                        ⚡ R{utilityData.electricity}
+                      </div>
+                    )}
+                    {utilityData.water && (
+                      <div className="bg-cyan-100 px-2 py-1 rounded-lg text-cyan-800">
+                        💧 R{utilityData.water}
+                      </div>
+                    )}
+                    {utilityData.sewerage && (
+                      <div className="bg-purple-100 px-2 py-1 rounded-lg text-purple-800">
+                        🚿 R{utilityData.sewerage}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {/* Invoice Month */}
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-gray-700 mb-2">📅 Invoice Month</label>
+                <input
+                  type="month"
+                  value={monthlyInvoiceData.invoiceMonth}
+                  onChange={(e) => setMonthlyInvoiceData(prev => ({ ...prev, invoiceMonth: e.target.value }))}
+                  className="w-full px-4 py-3 border-2 border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-lg"
+                />
+              </div>
+              
+              {/* Balance B/F */}
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-gray-700 mb-2">💰 Balance Brought Forward (Previous Balance)</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">R</span>
+                  <input
+                    type="text"
+                    value={monthlyInvoiceData.balanceBF}
+                    onChange={(e) => setMonthlyInvoiceData(prev => ({ ...prev, balanceBF: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Enter 0 if no previous balance</p>
+              </div>
+              
+              {/* Charges Section */}
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <Receipt size={20} className="text-purple-600" />
+                  Monthly Charges (Excl. VAT)
+                  {utilitySuccess && <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Auto-filled ✓</span>}
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Rent */}
+                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                    <label className="block text-sm font-bold text-blue-800 mb-2">🏠 Rent</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">R</span>
+                      <input
+                        type="text"
+                        value={monthlyInvoiceData.charges.rent}
+                        onChange={(e) => setMonthlyInvoiceData(prev => ({
+                          ...prev,
+                          charges: { ...prev.charges, rent: e.target.value }
+                        }))}
+                        placeholder={extractedData.financial?.year1?.basicRent || '0.00'}
+                        className="w-full pl-8 pr-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Electricity */}
+                  <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200">
+                    <label className="block text-sm font-bold text-yellow-800 mb-2">⚡ Electricity</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">R</span>
+                      <input
+                        type="text"
+                        value={monthlyInvoiceData.charges.electricity}
+                        onChange={(e) => setMonthlyInvoiceData(prev => ({
+                          ...prev,
+                          charges: { ...prev.charges, electricity: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full pl-8 pr-3 py-2 border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Water */}
+                  <div className="bg-cyan-50 p-4 rounded-xl border border-cyan-200">
+                    <label className="block text-sm font-bold text-cyan-800 mb-2">💧 Water</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">R</span>
+                      <input
+                        type="text"
+                        value={monthlyInvoiceData.charges.water}
+                        onChange={(e) => setMonthlyInvoiceData(prev => ({
+                          ...prev,
+                          charges: { ...prev.charges, water: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full pl-8 pr-3 py-2 border border-cyan-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Sewerage */}
+                  <div className="bg-purple-50 p-4 rounded-xl border border-purple-200">
+                    <label className="block text-sm font-bold text-purple-800 mb-2">🚿 Sewerage</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">R</span>
+                      <input
+                        type="text"
+                        value={monthlyInvoiceData.charges.sewerage}
+                        onChange={(e) => setMonthlyInvoiceData(prev => ({
+                          ...prev,
+                          charges: { ...prev.charges, sewerage: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full pl-8 pr-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Municipal Charges */}
+                  <div className="bg-green-50 p-4 rounded-xl border border-green-200">
+                    <label className="block text-sm font-bold text-green-800 mb-2">🏛️ Municipal</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">R</span>
+                      <input
+                        type="text"
+                        value={monthlyInvoiceData.charges.municipal}
+                        onChange={(e) => setMonthlyInvoiceData(prev => ({
+                          ...prev,
+                          charges: { ...prev.charges, municipal: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full pl-8 pr-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Refuse */}
+                  <div className="bg-orange-50 p-4 rounded-xl border border-orange-200">
+                    <label className="block text-sm font-bold text-orange-800 mb-2">🗑️ Refuse</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">R</span>
+                      <input
+                        type="text"
+                        value={monthlyInvoiceData.charges.refuse}
+                        onChange={(e) => setMonthlyInvoiceData(prev => ({
+                          ...prev,
+                          charges: { ...prev.charges, refuse: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full pl-8 pr-3 py-2 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Quick Fill from Lease Data */}
+              {extractedData.financial?.year1?.basicRent && (
+                <button
+                  onClick={() => setMonthlyInvoiceData(prev => ({
+                    ...prev,
+                    charges: {
+                      ...prev.charges,
+                      rent: extractedData.financial.year1.basicRent || '',
+                      refuse: extractedData.financial.year1.refuse || ''
+                    }
+                  }))}
+                  className="w-full mb-4 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm font-medium"
+                >
+                  ⚡ Quick Fill: Use Rent from Lease Data (R {extractedData.financial.year1.basicRent})
+                </button>
+              )}
+              
+              {/* Generate Button */}
+              <button
+                onClick={generateMonthlyInvoicePDF}
+                disabled={isGeneratingMonthlyInvoice}
+                className="w-full py-4 bg-gradient-to-r from-purple-600 to-violet-700 text-white font-bold rounded-xl hover:from-purple-700 hover:to-violet-800 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isGeneratingMonthlyInvoice ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Download size={20} />
+                    Generate Monthly Invoice PDF
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {(isGeneratingPDF || isGeneratingWord || isGeneratingLease) && (
         <LoadingSpinner 
           fullScreen 
@@ -1846,6 +3224,29 @@ Generated by Automated Lease Drafting System
                       <p className="font-semibold text-gray-900">{currentUser?.name}</p>
                       <p className="text-sm text-gray-600">{currentUser?.role}</p>
                       <p className="text-xs text-gray-500 mt-1">@{currentUser?.username}</p>
+                    </div>
+                    {/* Admin Panel - Only visible for Admin users */}
+                    {currentUser?.role === 'Admin' && (
+                      <div className="p-2 border-t border-gray-100">
+                        <button
+                          onClick={() => { setShowUserMenu(false); setShowAdminPanel(true); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-purple-50 text-purple-600 transition-colors rounded-lg font-medium"
+                        >
+                          <Shield size={20} />
+                          <span>Admin Panel</span>
+                          <span className="ml-auto text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Admin</span>
+                        </button>
+                      </div>
+                    )}
+                    {/* Need Help Button - For all users */}
+                    <div className="p-2 border-t border-gray-100">
+                      <button
+                        onClick={() => { setShowUserMenu(false); setShowHelpModal(true); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-amber-50 text-amber-600 transition-colors rounded-lg font-medium"
+                      >
+                        <HelpCircle size={20} />
+                        <span>Need Help?</span>
+                      </button>
                     </div>
                     <div className="p-2">
                       <button
@@ -1956,6 +3357,24 @@ Generated by Automated Lease Drafting System
                   <FileText size={18} />
                   <span>Generate Word</span>
                 </button>
+                
+                {/* Invoice and Monthly buttons hidden for now
+                <button
+                  onClick={exportInvoice}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl hover:from-amber-600 hover:to-orange-700 transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 transform font-medium"
+                >
+                  <Receipt size={18} />
+                  <span>Invoice</span>
+                </button>
+                
+                <button
+                  onClick={() => setShowMonthlyInvoice(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-500 to-violet-600 text-white rounded-xl hover:from-purple-600 hover:to-violet-700 transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 transform font-medium"
+                >
+                  <Calendar size={18} />
+                  <span>Monthly</span>
+                </button>
+                */}
               </div>
 
               {/* Right: Utility Buttons */}
@@ -2049,6 +3468,328 @@ Generated by Automated Lease Drafting System
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-4">
+            {/* LEASE CONTROL SCHEDULE - PRIMARY UPLOAD */}
+            <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 rounded-xl shadow-lg p-6 border-2 border-emerald-200 mb-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-lg">
+                  <Sparkles className="text-white" size={28} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Quick Start: Lease Control Schedule</h2>
+                  <p className="text-sm text-gray-600">Upload PDF to auto-populate the entire form</p>
+                </div>
+              </div>
+              
+              <div 
+                className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer
+                  ${isParsingLeaseControl ? 'border-emerald-400 bg-emerald-50' : 
+                    leaseControlSuccess ? 'border-green-400 bg-green-50' :
+                    leaseControlError ? 'border-red-400 bg-red-50' :
+                    'border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 active:border-emerald-600 active:bg-emerald-100 active:scale-[0.98]'}`}
+                onClick={() => {
+                  if (leaseControlInputRef.current) {
+                    leaseControlInputRef.current.click();
+                  }
+                }}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const file = e.dataTransfer.files[0];
+                  if (file) handleLeaseControlUpload(file);
+                }}
+              >
+                <input
+                  ref={leaseControlInputRef}
+                  id="leaseControlInput"
+                  type="file"
+                  accept=".pdf"
+                  className="hidden"
+                  onChange={(e) => handleLeaseControlUpload(e.target.files[0])}
+                />
+                
+                {isParsingLeaseControl ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="p-4 bg-emerald-100 rounded-full">
+                      <Loader2 className="text-emerald-600 animate-spin" size={40} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-emerald-800">Parsing Lease Control Schedule...</p>
+                      <p className="text-sm text-emerald-600">Extracting all lease data</p>
+                    </div>
+                  </div>
+                ) : leaseControlSuccess ? (
+                  <div className="flex flex-col items-center gap-3 relative">
+                    {/* Remove button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLeaseControlFile(null);
+                        setLeaseControlSuccess(false);
+                        setLeaseControlError(null);
+                        toast.info('Lease Control Schedule removed. You can upload another.');
+                      }}
+                      className="absolute top-0 right-0 p-2 bg-red-100 hover:bg-red-200 rounded-full transition-colors"
+                      title="Remove uploaded document"
+                    >
+                      <X className="text-red-600" size={20} />
+                    </button>
+                    <div className="p-4 bg-green-100 rounded-full">
+                      <CheckCircle className="text-green-600" size={40} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-green-800">Successfully Parsed!</p>
+                      <p className="text-sm text-green-600">{leaseControlFile?.name}</p>
+                      <p className="text-xs text-green-500 mt-1">Form has been auto-populated. Click to upload another.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="p-4 bg-emerald-100 rounded-full">
+                      <Upload className="text-emerald-600" size={40} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-800">Drop Lease Control Schedule PDF here</p>
+                      <p className="text-sm text-gray-500">or click to browse</p>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2 px-4 py-2 bg-white rounded-full shadow-sm border border-emerald-200">
+                      <FileText className="text-emerald-600" size={16} />
+                      <span className="text-xs font-medium text-gray-600">Lease Control Schedule PDF</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {leaseControlError && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                  <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={18} />
+                  <div>
+                    <p className="text-sm font-medium text-red-800">Upload Failed</p>
+                    <p className="text-sm text-red-600">{leaseControlError}</p>
+                  </div>
+                </div>
+              )}
+              
+              {leaseControlSuccess && (
+                <div className="mt-4 p-4 bg-white rounded-lg border border-green-200">
+                  <p className="text-sm font-semibold text-green-800 mb-2">✓ Data Extracted:</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex items-center gap-1">
+                      <CheckCircle size={12} className="text-green-500" />
+                      <span className="text-gray-600">Tenant: {extractedData.tenant?.name || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <CheckCircle size={12} className="text-green-500" />
+                      <span className="text-gray-600">Unit: {extractedData.premises?.unit || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <CheckCircle size={12} className="text-green-500" />
+                      <span className="text-gray-600">Lease: {extractedData.lease?.years || 0} years</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <CheckCircle size={12} className="text-green-500" />
+                      <span className="text-gray-600">Rent: R {extractedData.financial?.year1?.basicRent || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* OPTIONAL: Invoice Upload for Additional Data */}
+            <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 rounded-xl shadow-lg p-5 border-2 border-amber-200">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl shadow-lg flex items-center justify-center w-10 h-10">
+                  <span className="text-white font-bold text-xl">R</span>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Optional: Upload Invoice</h2>
+                  <p className="text-xs text-gray-600">Extract deposit & utility data not in Lease Control</p>
+                </div>
+              </div>
+              
+              <div
+                className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-transform
+                  ${isParsingInvoice ? 'border-amber-400 bg-amber-50' :
+                    invoiceSuccess ? 'border-green-400 bg-green-50' :
+                    invoiceError ? 'border-red-400 bg-red-50' :
+                    'border-amber-300 hover:border-amber-500 hover:bg-amber-50 active:border-orange-600 active:bg-orange-200 active:scale-95 active:shadow-inner'}`}
+                onClick={() => {
+                  if (invoiceInputRef.current) {
+                    invoiceInputRef.current.click();
+                  }
+                }}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const file = e.dataTransfer.files[0];
+                  if (file && !invoiceSuccess) handleInvoiceUpload(file);
+                }}
+              >
+                <input
+                  ref={invoiceInputRef}
+                  id="invoiceInput"
+                  type="file"
+                  accept=".pdf"
+                  className="hidden"
+                  onChange={(e) => handleInvoiceUpload(e.target.files[0])}
+                />
+                
+                {isParsingInvoice ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader2 className="text-amber-600 animate-spin" size={32} />
+                    <p className="font-semibold text-amber-800">Parsing Invoice...</p>
+                  </div>
+                ) : invoiceSuccess ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <CheckCircle className="text-green-600" size={32} />
+                    <p className="font-semibold text-green-800">Invoice Parsed!</p>
+                    <p className="text-xs text-green-600">{invoiceFile?.name}</p>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRemoveInvoice(); }}
+                      className="absolute top-2 right-2 p-1 bg-white rounded-full shadow text-gray-500 hover:text-red-500"
+                      title="Remove invoice"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center shadow-md">
+                      <span className="text-white font-bold text-2xl">R</span>
+                    </div>
+                    <p className="font-medium text-gray-700">Drop Invoice PDF here</p>
+                    <p className="text-xs text-gray-500">or click to browse</p>
+                  </div>
+                )}
+              </div>
+              
+              {invoiceError && (
+                <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                  <AlertCircle className="text-red-500" size={16} />
+                  <p className="text-sm text-red-800">{invoiceError}</p>
+                </div>
+              )}
+              
+              {/* Extraction Options - Show when invoice is parsed */}
+              {invoiceSuccess && invoiceData && (
+                <div className="mt-4 p-4 bg-white rounded-lg border border-amber-200">
+                  <p className="text-sm font-bold text-gray-800 mb-3">📋 Select what to extract:</p>
+                  
+                  {/* Landlord Details Option */}
+                  <div className="flex items-center gap-3 mb-2 p-2 bg-blue-50 rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="extractLandlord"
+                      checked={invoiceExtractOptions.landlord}
+                      onChange={(e) => setInvoiceExtractOptions(prev => ({ ...prev, landlord: e.target.checked }))}
+                      className="w-4 h-4 text-blue-600 rounded"
+                    />
+                    <label htmlFor="extractLandlord" className="flex-1 text-sm">
+                      <span className="font-medium">🏠 Landlord Details</span>
+                      {invoiceData.landlord?.name ? (
+                        <span className="ml-2 text-green-600">{invoiceData.landlord.name}</span>
+                      ) : (
+                        <span className="ml-2 text-gray-400">Not found</span>
+                      )}
+                    </label>
+                  </div>
+                  
+                  {/* Deposit Option */}
+                  <div className="flex items-center gap-3 mb-2 p-2 bg-gray-50 rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="extractDeposit"
+                      checked={invoiceExtractOptions.deposit}
+                      onChange={(e) => setInvoiceExtractOptions(prev => ({ ...prev, deposit: e.target.checked }))}
+                      className="w-4 h-4 text-amber-600 rounded"
+                    />
+                    <label htmlFor="extractDeposit" className="flex-1 text-sm">
+                      <span className="font-medium">Deposit</span>
+                      {invoiceData.deposit ? (
+                        <span className="ml-2 text-green-600">R {invoiceData.deposit}</span>
+                      ) : (
+                        <span className="ml-2 text-gray-400">Not found</span>
+                      )}
+                    </label>
+                  </div>
+                  
+                  {/* Utilities Header */}
+                  <p className="text-xs font-semibold text-gray-600 mt-3 mb-2">⚡ Utilities (optional):</p>
+                  
+                  {/* Electricity Option */}
+                  <div className="flex items-center gap-3 mb-2 p-2 bg-yellow-50 rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="extractElectricity"
+                      checked={invoiceExtractOptions.electricity}
+                      onChange={(e) => setInvoiceExtractOptions(prev => ({ ...prev, electricity: e.target.checked }))}
+                      className="w-4 h-4 text-yellow-600 rounded"
+                    />
+                    <label htmlFor="extractElectricity" className="flex-1 text-sm">
+                      <span className="font-medium">Electricity</span>
+                      {invoiceData.utilities?.electricity ? (
+                        <span className="ml-2 text-green-600">R {invoiceData.utilities.electricity}</span>
+                      ) : (
+                        <span className="ml-2 text-gray-400">Not found</span>
+                      )}
+                    </label>
+                  </div>
+                  
+                  {/* Water Option */}
+                  <div className="flex items-center gap-3 mb-2 p-2 bg-blue-50 rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="extractWater"
+                      checked={invoiceExtractOptions.water}
+                      onChange={(e) => setInvoiceExtractOptions(prev => ({ ...prev, water: e.target.checked }))}
+                      className="w-4 h-4 text-blue-600 rounded"
+                    />
+                    <label htmlFor="extractWater" className="flex-1 text-sm">
+                      <span className="font-medium">Water</span>
+                      {invoiceData.utilities?.water ? (
+                        <span className="ml-2 text-green-600">R {invoiceData.utilities.water}</span>
+                      ) : (
+                        <span className="ml-2 text-gray-400">Not found</span>
+                      )}
+                    </label>
+                  </div>
+                  
+                  {/* Sewerage Option */}
+                  <div className="flex items-center gap-3 mb-3 p-2 bg-purple-50 rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="extractSewerage"
+                      checked={invoiceExtractOptions.sewerage}
+                      onChange={(e) => setInvoiceExtractOptions(prev => ({ ...prev, sewerage: e.target.checked }))}
+                      className="w-4 h-4 text-purple-600 rounded"
+                    />
+                    <label htmlFor="extractSewerage" className="flex-1 text-sm">
+                      <span className="font-medium">Sewerage</span>
+                      {invoiceData.utilities?.sewerage ? (
+                        <span className="ml-2 text-green-600">R {invoiceData.utilities.sewerage}</span>
+                      ) : (
+                        <span className="ml-2 text-gray-400">Not found</span>
+                      )}
+                    </label>
+                  </div>
+                  
+                  {/* Apply Button */}
+                  <button
+                    onClick={applyInvoiceData}
+                    disabled={invoiceApplied}
+                    className={`w-full mt-4 py-2.5 font-semibold rounded-lg transition-all shadow-md ${
+                      invoiceApplied 
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white cursor-default' 
+                        : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 active:from-orange-700 active:to-red-600 active:scale-95 active:shadow-inner'
+                    }`}
+                  >
+                    {invoiceApplied ? '✓ Data Applied Successfully!' : '✓ Apply Selected to Form'}
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="bg-white rounded-xl shadow-lg p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -2253,6 +3994,7 @@ Generated by Automated Lease Drafting System
                 )}
               </div>
 
+              {/* HIDDEN: Or Paste FICA Document Text - Not used for now
               <div className="mb-4 p-4 bg-blue-50 rounded-lg border-2 border-dashed border-blue-300">
                 <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                   <Clipboard className="text-blue-600" size={18} />
@@ -2295,6 +4037,7 @@ Generated by Automated Lease Drafting System
                   </div>
                 )}
               </div>
+              */}
 
 
               <div className="mb-4">
@@ -2520,48 +4263,6 @@ Generated by Automated Lease Drafting System
                   onChange={(e) => updateField('tenant', 'physicalAddress', e.target.value)}
                   className="col-span-2 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                
-                {/* Tenant Bank Details */}
-                <div className="col-span-2 border-t pt-4 mt-2">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Bank Account Details</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <input
-                      type="text"
-                      placeholder="Bank Name"
-                      value={extractedData.tenant.bankName || ''}
-                      onChange={(e) => updateField('tenant', 'bankName', e.target.value)}
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Account Number"
-                      value={extractedData.tenant.bankAccountNumber || ''}
-                      onChange={(e) => updateField('tenant', 'bankAccountNumber', e.target.value)}
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Branch Code"
-                      value={extractedData.tenant.bankBranchCode || ''}
-                      onChange={(e) => updateField('tenant', 'bankBranchCode', e.target.value)}
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Account Type (e.g., Cheque/Savings)"
-                      value={extractedData.tenant.bankAccountType || ''}
-                      onChange={(e) => updateField('tenant', 'bankAccountType', e.target.value)}
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Account Holder Name"
-                      value={extractedData.tenant.bankAccountHolder || ''}
-                      onChange={(e) => updateField('tenant', 'bankAccountHolder', e.target.value)}
-                      className="col-span-2 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -2595,7 +4296,7 @@ Generated by Automated Lease Drafting System
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="361.00"
+                    placeholder="e.g. 361.00"
                     value={extractedData.premises.size}
                     onChange={(e) => updateField('premises', 'size', e.target.value)}
                     className="px-4 py-2 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full"
@@ -2605,7 +4306,7 @@ Generated by Automated Lease Drafting System
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="4.325"
+                    placeholder="e.g. 4.325"
                     value={extractedData.premises.percentage}
                     onChange={(e) => updateField('premises', 'percentage', e.target.value)}
                     className="px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full"
@@ -2792,6 +4493,40 @@ Generated by Automated Lease Drafting System
                 1.12 MONTHLY RENTAL AND OTHER MONTHLY CHARGES
               </h2>
               
+              {/* Escalation Rate Input */}
+              <div className="mb-4 p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border-2 border-amber-300 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📈</span>
+                    <div>
+                      <label className="font-bold text-gray-900 text-sm">Annual Escalation Rate</label>
+                      <p className="text-xs text-gray-600">Applied to rent & charges for Years 2+</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="100"
+                      value={extractedData.financial.escalationRate || '6'}
+                      onChange={(e) => {
+                        const newRate = e.target.value;
+                        setExtractedData(prev => ({
+                          ...prev,
+                          financial: {
+                            ...prev.financial,
+                            escalationRate: newRate
+                          }
+                        }));
+                      }}
+                      className="w-20 px-3 py-2 text-center text-lg font-bold border-2 border-amber-400 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent bg-white"
+                    />
+                    <span className="text-xl font-bold text-gray-700">%</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Compact Note */}
               <div className="mb-4 p-3 bg-blue-50 rounded-lg border-l-4 border-blue-500">
                 <p className="text-xs text-gray-700">
@@ -2814,7 +4549,7 @@ Generated by Automated Lease Drafting System
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
                       <input
                         type="text"
-                        placeholder="22730.00"
+                        placeholder="e.g. 22730.00"
                         value={extractedData.financial.year1.basicRent}
                         onChange={(e) => updateFinancialField('year1', 'basicRent', e.target.value)}
                         className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
@@ -2844,7 +4579,7 @@ Generated by Automated Lease Drafting System
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
                       <input
                         type="text"
-                        placeholder="1033.18"
+                        placeholder="e.g. 1033.18"
                         value={extractedData.financial.year1.security}
                         onChange={(e) => updateFinancialField('year1', 'security', e.target.value)}
                         className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
@@ -2880,7 +4615,7 @@ Generated by Automated Lease Drafting System
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 font-medium text-xs">R</span>
                         <input
                           type="text"
-                          placeholder="515.94"
+                          placeholder="e.g. 515.94"
                           value={extractedData.financial.year1.refuse}
                           onChange={(e) => updateFinancialField('year1', 'refuse', e.target.value)}
                           className="w-full pl-6 pr-2 py-2 text-xs border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all duration-200 hover:border-orange-300 bg-white shadow-sm"
@@ -2908,7 +4643,7 @@ Generated by Automated Lease Drafting System
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
                       <input
                         type="text"
-                        placeholder="251.29"
+                        placeholder="e.g. 251.29"
                         value={extractedData.financial.year1.rates}
                         onChange={(e) => updateFinancialField('year1', 'rates', e.target.value)}
                         className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
@@ -2940,291 +4675,140 @@ Generated by Automated Lease Drafting System
                 </div>
               </div>
 
-              <div className="mb-4 flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="showYear2"
-                  checked={showFinancialYear2}
-                  onChange={(e) => setShowFinancialYear2(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                />
-                <label htmlFor="showYear2" className="text-sm font-medium text-gray-700 cursor-pointer">
-                  Include Year 2 in lease agreement
-                </label>
-              </div>
-
-              {showFinancialYear2 && (
-                <div className="mb-6 p-5 bg-gradient-to-br from-green-50 to-emerald-100 rounded-xl shadow-sm border border-green-200">
-                  <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                    <span className="text-2xl">📅</span>
-                    <span>Year 2 (Auto-escalated 6%)</span>
-                  </h3>
+              {/* Dynamic Years 2+ - Generated based on lease period */}
+              {Array.from({ length: Math.max(0, parseInt(extractedData.lease.years) - 1) }, (_, i) => i + 2).map((yearNum) => {
+                const yearKey = `year${yearNum}`;
+                const yearData = extractedData.financial[yearKey] || { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' };
+                // Color schemes that cycle through for different years
+                const colorSchemes = [
+                  { bg: 'from-green-50 to-emerald-100', border: 'border-green-200', accent: 'border-green-200' },
+                  { bg: 'from-yellow-50 to-amber-100', border: 'border-yellow-200', accent: 'border-yellow-200' },
+                  { bg: 'from-purple-50 to-violet-100', border: 'border-purple-200', accent: 'border-purple-200' },
+                  { bg: 'from-rose-50 to-pink-100', border: 'border-rose-200', accent: 'border-rose-200' },
+                  { bg: 'from-cyan-50 to-teal-100', border: 'border-cyan-200', accent: 'border-cyan-200' },
+                  { bg: 'from-indigo-50 to-blue-100', border: 'border-indigo-200', accent: 'border-indigo-200' },
+                  { bg: 'from-orange-50 to-red-100', border: 'border-orange-200', accent: 'border-orange-200' },
+                  { bg: 'from-lime-50 to-green-100', border: 'border-lime-200', accent: 'border-lime-200' },
+                ];
+                const colorScheme = colorSchemes[(yearNum - 2) % colorSchemes.length];
                 
-                {/* Single Row - 7 Columns to match PDF exactly */}
-                <div className="grid grid-cols-7 gap-3">
-                  <div className="border-r-2 border-green-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>EXCL. VAT</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
-                      <input
-                        type="text"
-                        value={extractedData.financial.year2.basicRent}
-                        readOnly
-                        placeholder="Auto"
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="border-r-2 border-green-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>INCL. VAT</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
-                      <input
-                        type="text"
-                        value={extractedData.financial.year2.basicRent ? (parseFloat(extractedData.financial.year2.basicRent) * 1.15).toFixed(2) : ''}
-                        readOnly
-                        placeholder="Auto"
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="border-r-2 border-green-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">SECURITY<br/>EXCL. VAT</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
-                      <input
-                        type="text"
-                        value={extractedData.financial.year2.security}
-                        readOnly
-                        placeholder="Auto"
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-2.5 rounded-lg border-2 border-amber-200 shadow-md">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center leading-tight uppercase tracking-wide">
-                      ELECTRICITY<br/>SEWERAGE & WATER<br/>
-                      <span className="text-[11px] text-orange-700 font-semibold">*REFUSE AS AT</span><br/>
-                      <input
-                        type="date"
-                        value={extractedData.financial.ratesEffectiveDate}
-                        onChange={(e) => setExtractedData(prev => ({
-                          ...prev,
-                          financial: { ...prev.financial, ratesEffectiveDate: e.target.value }
-                        }))}
-                        className="w-full px-2 py-1 text-[11px] border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 mt-1 bg-white shadow-sm"
-                      />
-                      <span className="text-[11px] text-orange-700 font-semibold">EXCL. VAT</span>
-                    </label>
-                    <div className="space-y-1.5">
-                      <input
-                        type="text"
-                        placeholder="METERED"
-                        value={extractedData.financial.year2.sewerageWater}
-                        onChange={(e) => updateFinancialField('year2', 'sewerageWater', e.target.value)}
-                        className="w-full px-2.5 py-2 text-xs border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all duration-200 hover:border-orange-300 bg-white shadow-sm"
-                      />
-                      <div className="relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 font-medium text-xs">R</span>
+                return (
+                  <div key={yearNum} className={`mb-6 p-5 bg-gradient-to-br ${colorScheme.bg} rounded-xl shadow-sm border ${colorScheme.border}`}>
+                    <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      <span className="text-2xl">📅</span>
+                      <span>Year {yearNum} (Auto-escalated {extractedData.financial.escalationRate || '6'}%)</span>
+                    </h3>
+                  
+                    <div className="grid grid-cols-7 gap-3">
+                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
+                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>EXCL. VAT</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                          <input
+                            type="text"
+                            value={getEscalatedValue(extractedData.financial.year1.basicRent, yearNum) || ''}
+                            readOnly
+                            placeholder="Auto-calculated"
+                            className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
+                          />
+                        </div>
+                      </div>
+                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
+                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>INCL. VAT</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                          <input
+                            type="text"
+                            value={(() => {
+                              const rent = getEscalatedValue(extractedData.financial.year1.basicRent, yearNum);
+                              return rent ? (parseFloat(rent) * 1.15).toFixed(2) : '';
+                            })()}
+                            readOnly
+                            placeholder="Auto-calculated"
+                            className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
+                          />
+                        </div>
+                      </div>
+                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
+                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">SECURITY<br/>EXCL. VAT</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                          <input
+                            type="text"
+                            value={getEscalatedValue(extractedData.financial.year1.security, yearNum) || ''}
+                            readOnly
+                            placeholder="Auto-calculated"
+                            className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
+                          />
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-2.5 rounded-lg border-2 border-amber-200 shadow-md">
+                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center leading-tight uppercase tracking-wide">
+                          ELECTRICITY<br/>SEWERAGE & WATER<br/>
+                          <span className="text-[11px] text-orange-700 font-semibold">*REFUSE AS AT</span><br/>
+                          <input
+                            type="date"
+                            value={extractedData.financial.ratesEffectiveDate}
+                            readOnly
+                            className="w-full px-2 py-1 text-[11px] border-2 border-amber-300 rounded mt-1 bg-gradient-to-br from-gray-50 to-gray-100 shadow-sm"
+                          />
+                          <span className="text-[11px] text-orange-700 font-semibold">EXCL. VAT</span>
+                        </label>
+                        <div className="space-y-1.5">
+                          <input
+                            type="text"
+                            placeholder="METERED"
+                            value={yearData.sewerageWater || extractedData.financial.year1.sewerageWater || 'METERED'}
+                            readOnly
+                            className="w-full px-2.5 py-2 text-xs border-2 border-amber-300 rounded bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
+                          />
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 font-medium text-xs">R</span>
+                            <input
+                              type="text"
+                              placeholder="Auto-calculated"
+                              value={getEscalatedValue(extractedData.financial.year1.refuse, yearNum) || ''}
+                              readOnly
+                              className="w-full pl-6 pr-2 py-2 text-xs border-2 border-amber-300 rounded bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
+                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">RATES<br/>EXCL. VAT</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                          <input
+                            type="text"
+                            placeholder="Auto-calculated"
+                            value={getEscalatedValue(extractedData.financial.year1.rates, yearNum) || ''}
+                            readOnly
+                            className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
+                          />
+                        </div>
+                      </div>
+                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
+                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">FROM</label>
                         <input
-                          type="text"
-                          placeholder="0.00"
-                          value={extractedData.financial.year2.refuse}
-                          onChange={(e) => updateFinancialField('year2', 'refuse', e.target.value)}
-                          className="w-full pl-6 pr-2 py-2 text-xs border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all duration-200 hover:border-orange-300 bg-white shadow-sm"
+                          type="date"
+                          value={yearData.from}
+                          readOnly
+                          className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">TO</label>
+                        <input
+                          type="date"
+                          value={yearData.to}
+                          readOnly
+                          className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
                         />
                       </div>
                     </div>
                   </div>
-                  <div className="border-r-2 border-green-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">
-                      *RATES AS AT<br/>
-                      <input
-                        type="date"
-                        value={extractedData.financial.ratesEffectiveDate}
-                        onChange={(e) => setExtractedData(prev => ({
-                          ...prev,
-                          financial: { ...prev.financial, ratesEffectiveDate: e.target.value }
-                        }))}
-                        className="w-full px-2 py-1 text-[11px] border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-400 mt-1 bg-white shadow-sm"
-                      />
-                      <span className="text-[11px]">EXCL. VAT</span>
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
-                      <input
-                        type="text"
-                        placeholder="0.00"
-                        value={extractedData.financial.year2.rates}
-                        onChange={(e) => updateFinancialField('year2', 'rates', e.target.value)}
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="border-r-2 border-green-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">FROM</label>
-                    <input
-                      type="date"
-                      value={extractedData.financial.year2.from}
-                      onChange={(e) => updateFinancialField('year2', 'from', e.target.value)}
-                      className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">TO</label>
-                    <input
-                      type="date"
-                      value={extractedData.financial.year2.to}
-                      onChange={(e) => updateFinancialField('year2', 'to', e.target.value)}
-                      className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
-                    />
-                  </div>
-                </div>
-              </div>
-              )}
-
-              <div className="mb-4 flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="showYear3"
-                  checked={showFinancialYear3}
-                  onChange={(e) => setShowFinancialYear3(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                />
-                <label htmlFor="showYear3" className="text-sm font-medium text-gray-700 cursor-pointer">
-                  Include Year 3 in lease agreement
-                </label>
-              </div>
-
-              {showFinancialYear3 && (
-                <div className="mb-6 p-5 bg-gradient-to-br from-yellow-50 to-amber-100 rounded-xl shadow-sm border border-yellow-200">
-                  <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                    <span className="text-2xl">📅</span>
-                    <span>Year 3 (Auto-escalated 6%)</span>
-                  </h3>
-                
-                {/* Single Row - 7 Columns to match PDF exactly */}
-                <div className="grid grid-cols-7 gap-3">
-                  <div className="border-r-2 border-yellow-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>EXCL. VAT</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
-                      <input
-                        type="text"
-                        value={extractedData.financial.year3.basicRent}
-                        readOnly
-                        placeholder="Auto"
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="border-r-2 border-yellow-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>INCL. VAT</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
-                      <input
-                        type="text"
-                        value={extractedData.financial.year3.basicRent ? (parseFloat(extractedData.financial.year3.basicRent) * 1.15).toFixed(2) : ''}
-                        readOnly
-                        placeholder="Auto"
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="border-r-2 border-yellow-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">SECURITY<br/>EXCL. VAT</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
-                      <input
-                        type="text"
-                        value={extractedData.financial.year3.security}
-                        readOnly
-                        placeholder="Auto"
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-2.5 rounded-lg border-2 border-amber-200 shadow-md">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center leading-tight uppercase tracking-wide">
-                      ELECTRICITY<br/>SEWERAGE & WATER<br/>
-                      <span className="text-[11px] text-orange-700 font-semibold">*REFUSE AS AT</span><br/>
-                      <input
-                        type="date"
-                        value={extractedData.financial.ratesEffectiveDate}
-                        onChange={(e) => setExtractedData(prev => ({
-                          ...prev,
-                          financial: { ...prev.financial, ratesEffectiveDate: e.target.value }
-                        }))}
-                        className="w-full px-2 py-1 text-[11px] border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 mt-1 bg-white shadow-sm"
-                      />
-                      <span className="text-[11px] text-orange-700 font-semibold">EXCL. VAT</span>
-                    </label>
-                    <div className="space-y-1.5">
-                      <input
-                        type="text"
-                        placeholder="METERED"
-                        value={extractedData.financial.year3.sewerageWater}
-                        onChange={(e) => updateFinancialField('year3', 'sewerageWater', e.target.value)}
-                        className="w-full px-2.5 py-2 text-xs border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all duration-200 hover:border-orange-300 bg-white shadow-sm"
-                      />
-                      <div className="relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 font-medium text-xs">R</span>
-                        <input
-                          type="text"
-                          placeholder="0.00"
-                          value={extractedData.financial.year3.refuse}
-                          onChange={(e) => updateFinancialField('year3', 'refuse', e.target.value)}
-                          className="w-full pl-6 pr-2 py-2 text-xs border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all duration-200 hover:border-orange-300 bg-white shadow-sm"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="border-r-2 border-yellow-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">
-                      *RATES AS AT<br/>
-                      <input
-                        type="date"
-                        value={extractedData.financial.ratesEffectiveDate}
-                        onChange={(e) => setExtractedData(prev => ({
-                          ...prev,
-                          financial: { ...prev.financial, ratesEffectiveDate: e.target.value }
-                        }))}
-                        className="w-full px-2 py-1 text-[11px] border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-400 mt-1 bg-white shadow-sm"
-                      />
-                      <span className="text-[11px]">EXCL. VAT</span>
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
-                      <input
-                        type="text"
-                        placeholder="0.00"
-                        value={extractedData.financial.year3.rates}
-                        onChange={(e) => updateFinancialField('year3', 'rates', e.target.value)}
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="border-r-2 border-yellow-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">FROM</label>
-                    <input
-                      type="date"
-                      value={extractedData.financial.year3.from}
-                      onChange={(e) => updateFinancialField('year3', 'from', e.target.value)}
-                      className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">TO</label>
-                    <input
-                      type="date"
-                      value={extractedData.financial.year3.to}
-                      onChange={(e) => updateFinancialField('year3', 'to', e.target.value)}
-                      className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
-                    />
-                  </div>
-                </div>
-              </div>
-              )}
+                );
+              })}
 
               {/* Note about increases */}
               <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded">
@@ -3233,7 +4817,7 @@ Generated by Automated Lease Drafting System
                 </p>
               </div>
 
-              {/* 1.13-1.18 Sections matching PDF */}
+              {/* 1.13-1.17 Sections matching PDF */}
               <div className="mt-6 space-y-3">
                 <div className="grid grid-cols-2 gap-4 items-center p-3 bg-gray-50 rounded-lg border-l-4 border-blue-500">
                   <label className="text-sm font-bold text-gray-900">1.13 DEPOSIT</label>
@@ -3242,13 +4826,20 @@ Generated by Automated Lease Drafting System
                       <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600 font-medium">R</span>
                       <input
                         type="text"
-                        placeholder="39710.00"
+                        placeholder="e.g. 39710.00"
                         value={extractedData.financial.deposit}
                         onChange={(e) => updateField('financial', 'deposit', e.target.value)}
                         className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </div>
-                    <span className="text-sm text-gray-700 whitespace-nowrap">– DEPOSIT HELD.</span>
+                    <select
+                      value={extractedData.financial.depositType || 'held'}
+                      onChange={(e) => updateField('financial', 'depositType', e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-medium bg-white"
+                    >
+                      <option value="held">– DEPOSIT HELD.</option>
+                      <option value="payable">– DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.</option>
+                    </select>
                   </div>
                 </div>
 
@@ -3304,25 +4895,14 @@ Generated by Automated Lease Drafting System
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 items-center p-3 bg-gray-50 rounded-lg border-l-4 border-blue-500">
-                  <label className="text-sm font-bold text-gray-900">1.16 TENANT'S BANK ACCOUNT DETAILS</label>
-                  <input
-                    type="text"
-                    placeholder="N/A or Bank details"
-                    value={extractedData.financial.tenantBankAccount}
-                    onChange={(e) => updateField('financial', 'tenantBankAccount', e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 items-center p-3 bg-gray-50 rounded-lg border-l-4 border-blue-500">
                   <label className="text-sm font-bold text-gray-900">
-                    1.17 THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS LEASE (EXCL. VAT)
+                    1.16 THE FOLLOWING LEASE FEES SHALL BE PAYABLE BY THE TENANT ON SIGNATURE OF THIS LEASE (EXCL. VAT)
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600 font-medium">R</span>
                     <input
                       type="text"
-                      placeholder="750.00"
+                      placeholder="e.g. 750.00"
                       value={extractedData.financial.leaseFee}
                       onChange={(e) => updateField('financial', 'leaseFee', e.target.value)}
                       className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -3331,8 +4911,72 @@ Generated by Automated Lease Drafting System
                 </div>
 
                 <div className="p-4 bg-blue-50 border-l-4 border-blue-600 rounded-lg">
-                  <p className="text-sm font-bold text-gray-900">
-                    1.18 THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A"; "B"; "C"; "D"
+                  <p className="text-sm font-bold text-gray-900 mb-3">
+                    1.17 THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE:
+                  </p>
+                  <div className="flex items-center flex-wrap gap-3">
+                    {/* Get all annexure letters from the current state, sorted alphabetically */}
+                    {Object.keys(extractedData.financial.annexures || { A: true, B: true, C: true, D: true })
+                      .sort()
+                      .map((letter) => (
+                        <div key={letter} className="flex items-center gap-1 bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm">
+                          <input
+                            type="checkbox"
+                            checked={extractedData.financial.annexures?.[letter] ?? true}
+                            onChange={(e) => {
+                              const newAnnexures = { ...extractedData.financial.annexures, [letter]: e.target.checked };
+                              updateField('financial', 'annexures', newAnnexures);
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm font-bold text-gray-800">"{letter}"</span>
+                          {/* Show remove button only for annexures beyond D */}
+                          {letter > 'D' && (
+                            <button
+                              onClick={() => {
+                                const newAnnexures = { ...extractedData.financial.annexures };
+                                delete newAnnexures[letter];
+                                updateField('financial', 'annexures', newAnnexures);
+                              }}
+                              className="ml-1 text-red-400 hover:text-red-600 transition-colors"
+                              title={`Remove Annexure ${letter}`}
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    {/* Add Annexure Button */}
+                    <button
+                      onClick={() => {
+                        const currentLetters = Object.keys(extractedData.financial.annexures || {});
+                        // Find the next letter to add (A-Z)
+                        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+                        let nextLetter = 'A';
+                        for (let i = 0; i < alphabet.length; i++) {
+                          if (!currentLetters.includes(alphabet[i])) {
+                            nextLetter = alphabet[i];
+                            break;
+                          }
+                        }
+                        if (currentLetters.length < 26) {
+                          const newAnnexures = { ...extractedData.financial.annexures, [nextLetter]: true };
+                          updateField('financial', 'annexures', newAnnexures);
+                        }
+                      }}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg border border-green-300 transition-colors text-sm font-medium"
+                      title="Add another annexure"
+                    >
+                      <span className="text-lg leading-none">+</span>
+                      <span>Add</span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2">
+                    Selected: {(() => {
+                      const annexures = extractedData.financial.annexures || { A: true, B: true, C: true, D: true };
+                      const selected = Object.keys(annexures).filter(l => annexures[l]).sort();
+                      return selected.length > 0 ? selected.map(l => `"${l}"`).join('; ') : 'NONE';
+                    })()}
                   </p>
                 </div>
               </div>
@@ -3489,14 +5133,43 @@ Generated by Automated Lease Drafting System
               ) : (
                 <div className="space-y-2">
                   {leaseHistory.map((item) => (
-                    <div key={item.id} className="border border-gray-200 rounded-lg p-4 flex items-center justify-between">
-                      <div>
-                        <h3 className="font-semibold">{item.name}</h3>
-                        <p className="text-sm text-gray-500">
-                          {new Date(item.date).toLocaleString()}
-                        </p>
+                    <div key={item.id} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold">{item.name}</h3>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              item.type === 'Word' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {item.type || 'PDF'}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-500">
+                            {new Date(item.date).toLocaleString()}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
+                      {/* Show uploaded documents */}
+                      {item.documents && item.totalDocuments > 0 && (
+                        <div className="mb-3 p-2 bg-gray-50 rounded-lg">
+                          <p className="text-xs font-semibold text-gray-600 mb-1">📎 Uploaded Documents ({item.totalDocuments}):</p>
+                          <div className="flex flex-wrap gap-1">
+                            {item.documents.landlordCIPC?.map((doc, i) => (
+                              <span key={`lc-${i}`} className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">🏢 {doc.name}</span>
+                            ))}
+                            {item.documents.tenantCIPC?.map((doc, i) => (
+                              <span key={`tc-${i}`} className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">🏪 {doc.name}</span>
+                            ))}
+                            {item.documents.tenantID?.map((doc, i) => (
+                              <span key={`ti-${i}`} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">🪪 {doc.name}</span>
+                            ))}
+                            {item.documents.suretyID?.map((doc, i) => (
+                              <span key={`si-${i}`} className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">🛡️ {doc.name}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex justify-end gap-2">
                         <button
                           onClick={async () => {
                             try {
@@ -3707,7 +5380,7 @@ Generated by Automated Lease Drafting System
                             </span>
                             <span className="flex items-center gap-1">
                               <Folder size={14} />
-                              {Object.keys(pkg.documents || {}).length} Attached Documents
+                              {Object.values(pkg.documents || {}).reduce((total, arr) => total + (Array.isArray(arr) ? arr.length : 0), 0)} Attached Documents
                             </span>
                           </div>
                         </div>

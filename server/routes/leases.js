@@ -1,9 +1,157 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { authenticateToken } = require('./auth');
 const { generateLeasePDF } = require('../services/pdfGeneratorPuppeteer');
 const { generateLeaseWord } = require('../services/wordGenerator');
+const { parseLeaseControlPDF } = require('../services/leaseControlParser');
+const { generateDepositInvoice } = require('../services/invoiceGenerator');
+const { parseInvoicePDF } = require('../services/invoiceParser');
+const { generateMonthlyInvoice } = require('../services/monthlyInvoiceGenerator');
+const { parseUtilityStatement } = require('../services/utilityStatementParser');
 const { getPrisma } = require('../utils/prisma');
+
+// Configure multer for PDF uploads (memory storage for processing)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'), false);
+    }
+  }
+});
+
+// PARSE LEASE CONTROL SCHEDULE PDF - Extract all data automatically
+router.post('/parse-lease-control', upload.single('pdf'), async (req, res) => {
+  try {
+    console.log('📄 Lease Control PDF upload received');
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No PDF file uploaded' });
+    }
+    
+    console.log('📎 File details:', {
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+    
+    // Parse the PDF
+    const extractedData = await parseLeaseControlPDF(req.file.buffer);
+    
+    console.log('✅ Successfully parsed Lease Control Schedule');
+    console.log('📋 Extracted fields:', {
+      landlord: extractedData.landlord?.name || 'N/A',
+      tenant: extractedData.tenant?.name || 'N/A',
+      surety: extractedData.surety?.name || 'N/A',
+      premises: extractedData.premises?.unit || 'N/A',
+      leaseYears: extractedData.lease?.years || 'N/A',
+      year1Rent: extractedData.financial?.year1?.basicRent || 'N/A'
+    });
+    
+    res.json({
+      success: true,
+      message: 'Lease Control Schedule parsed successfully',
+      data: extractedData
+    });
+    
+  } catch (error) {
+    console.error('❌ Parse Lease Control error:', error);
+    res.status(500).json({
+      error: 'Failed to parse Lease Control PDF',
+      details: error.message
+    });
+  }
+});
+
+// PARSE INVOICE PDF - Extract deposit, utilities, and tenant bank details
+router.post('/parse-invoice', upload.single('pdf'), async (req, res) => {
+  try {
+    console.log('🧾 Invoice PDF upload received');
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No PDF file uploaded' });
+    }
+    
+    console.log('📎 File details:', {
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+    
+    // Parse the Invoice PDF
+    const extractedData = await parseInvoicePDF(req.file.buffer);
+    
+    console.log('✅ Successfully parsed Invoice');
+    console.log('📋 Extracted fields:', {
+      deposit: extractedData.deposit || 'N/A',
+      electricity: extractedData.utilities?.electricity || 'N/A',
+      water: extractedData.utilities?.water || 'N/A',
+      sewerage: extractedData.utilities?.sewerage || 'N/A',
+      rent: extractedData.rent || 'N/A',
+      tenantBank: extractedData.tenantBank?.accountNumber || 'N/A'
+    });
+    
+    res.json({
+      success: true,
+      message: 'Invoice parsed successfully',
+      data: extractedData
+    });
+    
+  } catch (error) {
+    console.error('❌ Parse Invoice error:', error);
+    res.status(500).json({
+      error: 'Failed to parse Invoice PDF',
+      details: error.message
+    });
+  }
+});
+
+// PARSE UTILITY STATEMENT PDF - Extract electricity, water, sewerage for monthly invoice
+router.post('/parse-utility-statement', upload.single('pdf'), async (req, res) => {
+  try {
+    console.log('⚡ Utility Statement PDF upload received');
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No PDF file uploaded' });
+    }
+    
+    console.log('📎 File details:', {
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+    
+    // Parse the Utility Statement PDF
+    const extractedData = await parseUtilityStatement(req.file.buffer);
+    
+    console.log('✅ Successfully parsed Utility Statement');
+    console.log('📋 Extracted utility fields:', {
+      electricity: extractedData.electricity || 'N/A',
+      water: extractedData.water || 'N/A',
+      sewerage: extractedData.sewerage || 'N/A',
+      municipal: extractedData.municipal || 'N/A',
+      refuse: extractedData.refuse || 'N/A',
+      rent: extractedData.rent || 'N/A'
+    });
+    
+    res.json({
+      success: true,
+      message: 'Utility Statement parsed successfully',
+      data: extractedData
+    });
+    
+  } catch (error) {
+    console.error('❌ Parse Utility Statement error:', error);
+    res.status(500).json({
+      error: 'Failed to parse Utility Statement PDF',
+      details: error.message
+    });
+  }
+});
 
 // TEST ENDPOINT: Generate PDF with sample data (NO AUTH - MUST BE FIRST)
 router.get('/test-pdf-public', async (req, res) => {
@@ -549,6 +697,101 @@ router.post('/generate-word', async (req, res) => {
     console.error('❌ Generate Word error:', error);
     res.status(500).json({ 
       error: 'Failed to generate Word document', 
+      details: error.message,
+      stack: error.stack 
+    });
+  }
+});
+
+// GENERATE DEPOSIT INVOICE PDF
+router.post('/generate-invoice', async (req, res) => {
+  try {
+    console.log('🧾 Invoice generation request received');
+    
+    const leaseData = req.body;
+    
+    if (!leaseData) {
+      console.error('❌ No lease data provided for invoice');
+      return res.status(400).json({ error: 'Lease data is required' });
+    }
+
+    console.log('🚀 Generating deposit invoice...');
+    const pdfBuffer = await generateDepositInvoice(leaseData);
+    console.log('✅ Invoice generated successfully, size:', pdfBuffer.length, 'bytes');
+
+    // Verify buffer is valid
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      throw new Error('Generated invoice PDF buffer is empty');
+    }
+    
+    const buffer = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+    
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Length': buffer.length,
+      'Content-Disposition': `attachment; filename="deposit-invoice-${Date.now()}.pdf"`,
+      'Cache-Control': 'no-cache',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    });
+    
+    res.end(buffer, 'binary');
+  } catch (error) {
+    console.error('❌ Generate Invoice error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate invoice', 
+      details: error.message,
+      stack: error.stack 
+    });
+  }
+});
+
+// GENERATE MONTHLY INVOICE PDF
+router.post('/generate-monthly-invoice', async (req, res) => {
+  try {
+    console.log('📅 Monthly Invoice generation request received');
+    
+    const invoiceData = req.body;
+    
+    if (!invoiceData) {
+      console.error('❌ No invoice data provided');
+      return res.status(400).json({ error: 'Invoice data is required' });
+    }
+
+    console.log('🚀 Generating monthly invoice...');
+    console.log('📋 Invoice details:', {
+      tenant: invoiceData.tenant?.name || 'N/A',
+      property: invoiceData.property?.name || 'N/A',
+      month: invoiceData.invoiceMonth || 'N/A',
+      chargesCount: invoiceData.charges?.length || 0
+    });
+    
+    const pdfBuffer = await generateMonthlyInvoice(invoiceData);
+    console.log('✅ Monthly invoice generated successfully, size:', pdfBuffer.length, 'bytes');
+
+    // Verify buffer is valid
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      throw new Error('Generated monthly invoice PDF buffer is empty');
+    }
+    
+    const buffer = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+    
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Length': buffer.length,
+      'Content-Disposition': `attachment; filename="monthly-invoice-${invoiceData.invoiceMonth || Date.now()}.pdf"`,
+      'Cache-Control': 'no-cache',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    });
+    
+    res.end(buffer, 'binary');
+  } catch (error) {
+    console.error('❌ Generate Monthly Invoice error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate monthly invoice', 
       details: error.message,
       stack: error.stack 
     });

@@ -7,7 +7,7 @@ const path = require('path');
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // CORS Configuration for development and production
 const corsOptions = {
@@ -46,6 +46,7 @@ app.use('/api/documents', require('./routes/documents'));
 app.use('/api/ocr', require('./routes/ocr'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // Health check endpoints
 app.get('/health', (req, res) => {
