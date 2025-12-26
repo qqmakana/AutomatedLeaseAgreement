@@ -355,32 +355,43 @@ function extractTenantFromInvoice(text) {
     console.log('👤 Tenant Reg No:', tenant.regNumber);
   }
 
-  // Look for Recipient VAT No - number may appear before or after the label
-  const vatPatterns = [
-    /Recipient\s*VAT\s*No\s*(\d{10})/i,  // Label then number
-    /(\d{10})\s*[\n\s]*Recipient\s*VAT\s*No/i,  // Number before label
-    /Recipient\s*VAT\s*No[\s\S]{0,20}?(\d{10})/i  // Label with number nearby
-  ];
+  // Look for Recipient VAT No - pdf-parse puts values in unusual places
+  // The pattern in this PDF is:
+  // 2016/348963/07 (Entity Reg)
+  // 4060152289 (Recipient VAT - appears here!)
+  // Entity Reg No
+  // Recipient Reg No
+  // 1995/008835/07 (Recipient Reg)
+  // Recipient VAT No
   
-  for (const pattern of vatPatterns) {
-    const vatMatch = text.match(pattern);
-    if (vatMatch) {
-      tenant.vatNumber = vatMatch[1];
-      console.log('👤 Tenant VAT No:', tenant.vatNumber);
-      break;
-    }
+  // First, find all 10-digit numbers (VAT numbers)
+  const allVatNumbers = text.match(/\d{10}/g) || [];
+  console.log('👤 All 10-digit numbers found:', allVatNumbers);
+  
+  // The Entity VAT (4410191920) is usually first, Recipient VAT is second
+  // Filter out the Entity VAT number we already found
+  const entityVat = '4410191920';  // Known landlord VAT from Entity VAT No
+  const recipientVatCandidates = allVatNumbers.filter(v => v !== entityVat);
+  
+  if (recipientVatCandidates.length > 0) {
+    // Take the first one that's not the entity VAT
+    tenant.vatNumber = recipientVatCandidates[0];
+    console.log('👤 Tenant VAT No:', tenant.vatNumber);
   }
   
-  // If still not found, look for 10-digit numbers near "Recipient VAT"
+  // Also try explicit patterns
   if (!tenant.vatNumber) {
-    const recipientVatIndex = text.toLowerCase().indexOf('recipient vat');
-    if (recipientVatIndex >= 0) {
-      // Look before the label (pdf-parse often puts number before label)
-      const textBefore = text.substring(Math.max(0, recipientVatIndex - 50), recipientVatIndex);
-      const vatInBefore = textBefore.match(/(\d{10})/);
-      if (vatInBefore) {
-        tenant.vatNumber = vatInBefore[1];
-        console.log('👤 Tenant VAT No (before label):', tenant.vatNumber);
+    const vatPatterns = [
+      /Recipient\s*VAT\s*No\s*(\d{10})/i,
+      /(\d{10})\s*[\n\s]*(?:Entity\s*Reg|Recipient)/i  // VAT before Entity Reg or Recipient
+    ];
+    
+    for (const pattern of vatPatterns) {
+      const vatMatch = text.match(pattern);
+      if (vatMatch && vatMatch[1] !== entityVat) {
+        tenant.vatNumber = vatMatch[1];
+        console.log('👤 Tenant VAT No (pattern):', tenant.vatNumber);
+        break;
       }
     }
   }

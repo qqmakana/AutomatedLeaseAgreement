@@ -453,21 +453,48 @@ function extractPremisesData(text) {
     }
   }
   
-  // Extract building name/property
-  const buildingMatch = text.match(/Property\s+([A-Za-z0-9\s,]+?(?:Park|Estate|Centre|Office)?)/i);
-  if (buildingMatch) {
-    const building = buildingMatch[1].trim();
-    if (building.toLowerCase() !== 'address') {
-      premises.buildingName = building;
-      console.log('🏢 Building:', premises.buildingName);
+  // Extract building name - look for "Office Park", "Business Park", etc.
+  const buildingPatterns = [
+    /([A-Za-z]+\s+(?:Office|Business|Industrial)\s+Park)/i,  // "Woodmead Office Park"
+    /Property\s+Erf\s+\d+[,\s]+([A-Za-z]+)/i,  // "Property Erf 726, Woodmead" -> "Woodmead"
+    /Erf\s+\d+[,\s]+([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,  // "Erf 726, Woodmead" -> "Woodmead"
+    /([A-Za-z]+\s+(?:Estate|Centre|Center|Complex))/i
+  ];
+  
+  for (const pattern of buildingPatterns) {
+    const buildingMatch = text.match(pattern);
+    if (buildingMatch) {
+      const building = buildingMatch[1].trim();
+      if (!invalidValues.includes(building.toLowerCase()) && building.length > 3) {
+        premises.buildingName = building;
+        console.log('🏢 Building:', premises.buildingName);
+        break;
+      }
     }
   }
   
-  // Extract address - look for street address
-  const addressMatch = text.match(/(\d+\s+[A-Za-z]+\s+(?:Lane|Street|Road|Avenue|Drive)[,\s]+[A-Za-z\s]+(?:Park|Office)?[^\n]*)/i);
-  if (addressMatch) {
-    premises.buildingAddress = addressMatch[1].replace(/\s+/g, ' ').trim();
-    console.log('📍 Building Address:', premises.buildingAddress);
+  // If building still not found, look for location after Erf
+  if (!premises.buildingName) {
+    const erfLocationMatch = text.match(/Erf\s+\d+[,\s]+([A-Za-z]+)/i);
+    if (erfLocationMatch) {
+      premises.buildingName = erfLocationMatch[1].trim();
+      console.log('🏢 Building (from Erf):', premises.buildingName);
+    }
+  }
+  
+  // Extract address - look for street address pattern
+  const addressPatterns = [
+    /(\d+\s+[A-Za-z]+\s+(?:Lane|Street|Road|Avenue|Drive)[,\s]*[A-Za-z\s]*(?:Park|Office)?[^\n]*)/i,
+    /Address\s*\n?\s*(\d+[^\n]+)/i
+  ];
+  
+  for (const pattern of addressPatterns) {
+    const addressMatch = text.match(pattern);
+    if (addressMatch) {
+      premises.buildingAddress = addressMatch[1].replace(/\s+/g, ' ').trim();
+      console.log('📍 Building Address:', premises.buildingAddress);
+      break;
+    }
   }
   
   // Extract size (area in m²) - look for number like 417.00
