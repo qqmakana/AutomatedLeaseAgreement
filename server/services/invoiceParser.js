@@ -355,11 +355,34 @@ function extractTenantFromInvoice(text) {
     console.log('👤 Tenant Reg No:', tenant.regNumber);
   }
 
-  // Look for Recipient VAT No
-  const vatMatch = text.match(/Recipient\s*VAT\s*No\s*(\d+)/i);
-  if (vatMatch) {
-    tenant.vatNumber = vatMatch[1];
-    console.log('👤 Tenant VAT No:', tenant.vatNumber);
+  // Look for Recipient VAT No - number may appear before or after the label
+  const vatPatterns = [
+    /Recipient\s*VAT\s*No\s*(\d{10})/i,  // Label then number
+    /(\d{10})\s*[\n\s]*Recipient\s*VAT\s*No/i,  // Number before label
+    /Recipient\s*VAT\s*No[\s\S]{0,20}?(\d{10})/i  // Label with number nearby
+  ];
+  
+  for (const pattern of vatPatterns) {
+    const vatMatch = text.match(pattern);
+    if (vatMatch) {
+      tenant.vatNumber = vatMatch[1];
+      console.log('👤 Tenant VAT No:', tenant.vatNumber);
+      break;
+    }
+  }
+  
+  // If still not found, look for 10-digit numbers near "Recipient VAT"
+  if (!tenant.vatNumber) {
+    const recipientVatIndex = text.toLowerCase().indexOf('recipient vat');
+    if (recipientVatIndex >= 0) {
+      // Look before the label (pdf-parse often puts number before label)
+      const textBefore = text.substring(Math.max(0, recipientVatIndex - 50), recipientVatIndex);
+      const vatInBefore = textBefore.match(/(\d{10})/);
+      if (vatInBefore) {
+        tenant.vatNumber = vatInBefore[1];
+        console.log('👤 Tenant VAT No (before label):', tenant.vatNumber);
+      }
+    }
   }
 
   // Look for tenant name - company with (Pty) Ltd
