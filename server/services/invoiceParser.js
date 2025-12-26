@@ -2,7 +2,7 @@
  * Invoice Parser Service
  * Extracts deposit, utilities, and tenant bank details from invoice PDFs
  * Uses Python pdfplumber (preferred) with JavaScript pdf-parse fallback
- * Optimized regex patterns for both extraction methods
+ * Robust extraction with aggressive pattern matching
  */
 
 const { spawn } = require('child_process');
@@ -85,7 +85,6 @@ async function extractTextWithJavaScript(pdfBuffer) {
  * Extract text from PDF - tries Python first, falls back to JavaScript
  */
 async function extractTextFromPDF(pdfBuffer) {
-  // Try Python first (better extraction quality)
   try {
     console.log('🧾 Attempting PDF extraction with Python pdfplumber...');
     const text = await extractTextWithPython(pdfBuffer);
@@ -94,7 +93,6 @@ async function extractTextFromPDF(pdfBuffer) {
   } catch (pythonError) {
     console.log('⚠️ Python extraction failed:', pythonError.message);
     
-    // Fall back to JavaScript pdf-parse
     try {
       console.log('🧾 Falling back to JavaScript pdf-parse...');
       const text = await extractTextWithJavaScript(pdfBuffer);
@@ -108,55 +106,31 @@ async function extractTextFromPDF(pdfBuffer) {
 }
 
 /**
- * Normalize text to handle variations between pdf-parse and pdfplumber
- */
-function normalizeText(text) {
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\t/g, ' ')
-    .replace(/[ ]+/g, ' ');  // Multiple spaces to single space
-}
-
-/**
  * Parse Invoice PDF and extract relevant data
- * @param {Buffer} pdfBuffer - The PDF file buffer
- * @returns {Object} - Extracted invoice data
  */
 async function parseInvoicePDF(pdfBuffer) {
   try {
     console.log('🧾 Parsing Invoice PDF...');
     
-    // Extract text (tries Python first, falls back to JavaScript)
-    const { text: rawText, method } = await extractTextFromPDF(pdfBuffer);
-    const text = normalizeText(rawText);
+    const { text, method } = await extractTextFromPDF(pdfBuffer);
     console.log('📝 Extracted text length:', text.length, '(using', method, ')');
 
-    // DEBUG: Log first 3000 chars
-    console.log('=== RAW INVOICE TEXT (first 3000 chars) ===');
-    console.log(text.substring(0, 3000));
-    console.log('=== END RAW TEXT ===');
+    // Log full text for debugging
+    console.log('=== FULL INVOICE TEXT ===');
+    console.log(text);
+    console.log('=== END FULL TEXT ===');
 
     const extractedData = {
-      deposit: extractDeposit(text, method),
-      utilities: extractUtilities(text, method),
-      tenantBank: extractTenantBankDetails(text, method),
-      rent: extractRent(text, method),
-      tenant: extractTenantFromInvoice(text, method),
-      landlord: extractLandlordFromInvoice(text, method)
+      deposit: extractDeposit(text),
+      utilities: extractUtilities(text),
+      tenantBank: extractTenantBankDetails(text),
+      rent: extractRent(text),
+      tenant: extractTenantFromInvoice(text),
+      landlord: extractLandlordFromInvoice(text)
     };
 
     console.log('✅ Invoice parsing complete');
-    console.log('📋 Extracted:', {
-      deposit: extractedData.deposit || 'N/A',
-      electricity: extractedData.utilities.electricity || 'N/A',
-      water: extractedData.utilities.water || 'N/A',
-      sewerage: extractedData.utilities.sewerage || 'N/A',
-      rent: extractedData.rent || 'N/A',
-      landlordName: extractedData.landlord?.name || 'N/A',
-      landlordVat: extractedData.landlord?.vatNo || 'N/A',
-      landlordRegNo: extractedData.landlord?.regNo || 'N/A'
-    });
+    console.log('📊 FINAL EXTRACTED DATA:', JSON.stringify(extractedData, null, 2));
 
     return extractedData;
   } catch (error) {
@@ -166,33 +140,59 @@ async function parseInvoicePDF(pdfBuffer) {
 }
 
 /**
+ * Find all monetary amounts in text
+ */
+function findAllAmounts(text) {
+  const amounts = [];
+  const pattern = /([\d,]+\.?\d*)/g;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const value = parseFloat(match[1].replace(/,/g, ''));
+    if (value > 0) {
+      amounts.push({ value: value, str: match[1].replace(/,/g, ''), index: match.index });
+    }
+  }
+  return amounts;
+}
+
+/**
  * Extract deposit amount from invoice
  */
-function extractDeposit(text, method) {
+function extractDeposit(text) {
   console.log('💰 Extracting deposit...');
   
-  // Multiple patterns for deposit
+  // Look for deposit patterns
   const patterns = [
-    // Pattern: "Deposit 0.00 0.00 45,000.00" - take the last amount
-    /Deposit\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+([\d,]+\.?\d*)/i,
-    // Pattern: "Deposit: R 45,000.00"
-    /Deposit[:\s]+R?\s*([\d,]+\.?\d*)/i,
-    // Pattern: "Bank Guarantee 45000.00"
-    /Bank\s+Guarantee[:\s]*([\d,]+\.?\d*)/i,
-    // Pattern: "DEPOSIT R45000"
-    /DEPOSIT[:\s]*R?\s*([\d,]+\.?\d*)/i,
-    // Pattern: "Security Deposit: 45000"
-    /Security\s+Deposit[:\s]*([\d,]+\.?\d*)/i
+    /Deposit[^\d]*([\d,]+\.?\d*)[^\d]*([\d,]+\.?\d*)[^\d]*([\d,]+\.?\d*)/i,  // Deposit with 3 numbers, take last
+    /Deposit[:\s]*([\d,]+\.?\d*)/i,
+    /Bank\s*Guarantee[:\s]*([\d,]+\.?\d*)/i,
+    /Security\s*Deposit[:\s]*([\d,]+\.?\d*)/i
   ];
 
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
-      const value = match[1].replace(/[,\s]/g, '');
-      if (parseFloat(value) > 0) {
+      // Get the last captured group (usually the total)
+      let value = match[match.length - 1] || match[1];
+      value = value.replace(/,/g, '');
+      if (parseFloat(value) > 100) {
         console.log('💰 Found Deposit:', value);
         return value;
       }
+    }
+  }
+
+  // If not found, look for large amounts near "Deposit" keyword
+  const depositIndex = text.toLowerCase().indexOf('deposit');
+  if (depositIndex >= 0) {
+    const nearbyText = text.substring(depositIndex, depositIndex + 200);
+    const amounts = findAllAmounts(nearbyText);
+    const largeAmounts = amounts.filter(a => a.value > 1000);
+    if (largeAmounts.length > 0) {
+      // Take the last one (usually the total)
+      const deposit = largeAmounts[largeAmounts.length - 1].str;
+      console.log('💰 Found Deposit (nearby):', deposit);
+      return deposit;
     }
   }
 
@@ -202,7 +202,7 @@ function extractDeposit(text, method) {
 /**
  * Extract utility charges from invoice
  */
-function extractUtilities(text, method) {
+function extractUtilities(text) {
   console.log('💡 Extracting utilities...');
   
   const utilities = {
@@ -213,100 +213,57 @@ function extractUtilities(text, method) {
     refuse: null
   };
 
-  // Electricity - may have multiple entries, sum them
-  // Pattern: "Electricity 1234.56 0.00 1234.56"
-  const electricityPatterns = [
-    /Electricity\s+([\d,]+\.?\d*)/gi,
-    /Elec(?:tric)?\s+Charge[:\s]*([\d,]+\.?\d*)/gi
-  ];
-  
-  let totalElectricity = 0;
-  for (const pattern of electricityPatterns) {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      const value = parseFloat(match[1].replace(/,/g, ''));
-      if (value > 0) {
-        totalElectricity += value;
-      }
-    }
-  }
-  if (totalElectricity > 0) {
-    utilities.electricity = totalElectricity.toFixed(2);
-    console.log('💡 Found Electricity:', utilities.electricity);
-  }
-
-  // Water - multiple patterns
-  const waterPatterns = [
-    /Water\s+([\d,]+\.?\d*)/i,
-    /Water\s+Charge[:\s]*([\d,]+\.?\d*)/i
-  ];
-  
-  for (const pattern of waterPatterns) {
+  // Helper to find amount near keyword
+  const findAmountNear = (keyword) => {
+    const pattern = new RegExp(keyword + '[^\\d]*(\\d[\\d,]*\\.?\\d*)', 'i');
     const match = text.match(pattern);
     if (match) {
       const value = match[1].replace(/,/g, '');
       if (parseFloat(value) > 0) {
-        utilities.water = value;
-        console.log('💧 Found Water:', utilities.water);
-        break;
+        return value;
       }
     }
+    return null;
+  };
+
+  // Electricity - may have multiple, sum them
+  const electricityMatches = text.matchAll(/Electricity[^\d]*([\d,]+\.?\d*)/gi);
+  let totalElectricity = 0;
+  for (const match of electricityMatches) {
+    const value = parseFloat(match[1].replace(/,/g, ''));
+    if (value > 0) {
+      totalElectricity += value;
+    }
   }
+  if (totalElectricity > 0) {
+    utilities.electricity = totalElectricity.toFixed(2);
+    console.log('💡 Electricity:', utilities.electricity);
+  }
+
+  // Water
+  utilities.water = findAmountNear('Water');
+  if (utilities.water) console.log('💧 Water:', utilities.water);
 
   // Sewerage
-  const seweragePatterns = [
-    /Sewerage\s+([\d,]+\.?\d*)/i,
-    /Sewer(?:age)?\s+Charge[:\s]*([\d,]+\.?\d*)/i
-  ];
-  
-  for (const pattern of seweragePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      utilities.sewerage = match[1].replace(/,/g, '');
-      console.log('🚿 Found Sewerage:', utilities.sewerage);
-      break;
-    }
-  }
+  utilities.sewerage = findAmountNear('Sewer');
+  if (utilities.sewerage) console.log('🚿 Sewerage:', utilities.sewerage);
 
-  // Municipal Charges (rates)
-  const municipalPatterns = [
-    /Municipal\s+Charges?\s+([\d,]+\.?\d*)/i,
-    /Rates\s+([\d,]+\.?\d*)/i,
-    /Municipal[:\s]*([\d,]+\.?\d*)/i
-  ];
-  
-  for (const pattern of municipalPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      utilities.municipalCharges = match[1].replace(/,/g, '');
-      console.log('🏛️ Found Municipal Charges:', utilities.municipalCharges);
-      break;
-    }
-  }
+  // Municipal Charges / Rates
+  utilities.municipalCharges = findAmountNear('Municipal') || findAmountNear('Rates');
+  if (utilities.municipalCharges) console.log('🏛️ Municipal:', utilities.municipalCharges);
 
   // Refuse
-  const refusePatterns = [
-    /Refuse\s+([\d,]+\.?\d*)/i,
-    /Refuse\s+Removal[:\s]*([\d,]+\.?\d*)/i
-  ];
-  
-  for (const pattern of refusePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      utilities.refuse = match[1].replace(/,/g, '');
-      console.log('🗑️ Found Refuse:', utilities.refuse);
-      break;
-    }
-  }
+  utilities.refuse = findAmountNear('Refuse');
+  if (utilities.refuse) console.log('🗑️ Refuse:', utilities.refuse);
 
   return utilities;
 }
 
 /**
- * Extract tenant bank details from invoice (payment section)
+ * Extract tenant bank details from invoice
  */
-function extractTenantBankDetails(text, method) {
-  console.log('🏦 Extracting tenant bank details...');
+function extractTenantBankDetails(text) {
+  console.log('🏦 Extracting bank details...');
   
   const bankDetails = {
     bankName: null,
@@ -315,67 +272,44 @@ function extractTenantBankDetails(text, method) {
     accountName: null
   };
 
-  // Bank name - multiple patterns
-  const bankPatterns = [
-    /Bank[:\s]+([A-Za-z]+(?:\s+-\s+[A-Za-z\s]+)?)/i,
-    /Bank\s+Name[:\s]+([A-Za-z\s]+)/i,
-    /(Nedbank|FNB|ABSA|Standard\s+Bank|Capitec|Investec)/i
-  ];
-  
-  for (const pattern of bankPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      bankDetails.bankName = match[1].trim();
-      console.log('🏦 Found Bank:', bankDetails.bankName);
+  // Bank name - look for known SA banks
+  const bankNames = ['Nedbank', 'FNB', 'ABSA', 'Standard Bank', 'Capitec', 'Investec', 'First National'];
+  for (const bank of bankNames) {
+    if (text.toLowerCase().includes(bank.toLowerCase())) {
+      bankDetails.bankName = bank;
+      console.log('🏦 Bank:', bankDetails.bankName);
       break;
     }
   }
 
-  // Account Number - multiple patterns
-  const accountPatterns = [
-    /Account\s*(?:Number|No)[:\s]*(\d[\d\s]+\d)/i,
-    /Acc(?:ount)?\s*No[:\s]*(\d+)/i,
-    /Account[:\s]*(\d{8,})/i
-  ];
-  
-  for (const pattern of accountPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      bankDetails.accountNumber = match[1].replace(/\s/g, '');
-      console.log('🏦 Found Account Number:', bankDetails.accountNumber);
-      break;
+  // Also try generic pattern
+  if (!bankDetails.bankName) {
+    const bankMatch = text.match(/Bank[:\s]+([A-Za-z\s\-]+?)(?:\s+Branch|\s+Account|\n|$)/i);
+    if (bankMatch) {
+      bankDetails.bankName = bankMatch[1].trim();
+      console.log('🏦 Bank (pattern):', bankDetails.bankName);
     }
   }
 
-  // Branch Code - multiple patterns
-  const branchPatterns = [
-    /Branch\s*Code[:\s]*(\d+)/i,
-    /Branch\s*No[:\s]*(\d+)/i,
-    /Branch[:\s]*(\d{6})/i
-  ];
-  
-  for (const pattern of branchPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      bankDetails.branchCode = match[1];
-      console.log('🏦 Found Branch Code:', bankDetails.branchCode);
-      break;
-    }
+  // Account Number - look for 8+ digit numbers
+  const accountMatch = text.match(/Account\s*(?:Number|No)?[:\s]*(\d{8,})/i);
+  if (accountMatch) {
+    bankDetails.accountNumber = accountMatch[1];
+    console.log('🏦 Account Number:', bankDetails.accountNumber);
+  }
+
+  // Branch Code - 6 digit number
+  const branchMatch = text.match(/Branch\s*(?:Code|No)?[:\s]*(\d{6})/i);
+  if (branchMatch) {
+    bankDetails.branchCode = branchMatch[1];
+    console.log('🏦 Branch Code:', bankDetails.branchCode);
   }
 
   // Account Name
-  const accountNamePatterns = [
-    /Account\s*Name[:\s]*([A-Za-z0-9\s\-\(\)]+)/i,
-    /Acc\s*Name[:\s]*([A-Za-z0-9\s\-\(\)]+)/i
-  ];
-  
-  for (const pattern of accountNamePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      bankDetails.accountName = match[1].trim();
-      console.log('🏦 Found Account Name:', bankDetails.accountName);
-      break;
-    }
+  const accountNameMatch = text.match(/Account\s*Name[:\s]+([A-Za-z0-9\s\-\(\)]+?)(?:\n|Account|Branch)/i);
+  if (accountNameMatch) {
+    bankDetails.accountName = accountNameMatch[1].trim();
+    console.log('🏦 Account Name:', bankDetails.accountName);
   }
 
   return bankDetails;
@@ -384,26 +318,21 @@ function extractTenantBankDetails(text, method) {
 /**
  * Extract rent from invoice
  */
-function extractRent(text, method) {
+function extractRent(text) {
   console.log('💰 Extracting rent...');
   
-  const rentPatterns = [
-    // Pattern: "Rent 22730.00 0.00 22730.00"
-    /Rent\s+([\d,]+\.?\d*)/i,
-    // Pattern: "Basic Rent: R22730.00"
-    /Basic\s+Rent[:\s]*R?\s*([\d,]+\.?\d*)/i,
-    // Pattern: "Monthly Rent 22730"
-    /Monthly\s+Rent[:\s]*([\d,]+\.?\d*)/i,
-    // Pattern: "Rental: 22730.00"
-    /Rental[:\s]*([\d,]+\.?\d*)/i
+  // Look for rent patterns
+  const patterns = [
+    /(?:Basic\s*)?Rent[al]?[^\d]*([\d,]+\.?\d*)/i,
+    /Monthly\s*Rent[:\s]*([\d,]+\.?\d*)/i
   ];
   
-  for (const pattern of rentPatterns) {
+  for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
       const value = match[1].replace(/,/g, '');
-      if (parseFloat(value) > 0) {
-        console.log('💰 Found Rent:', value);
+      if (parseFloat(value) > 100) {
+        console.log('💰 Rent:', value);
         return value;
       }
     }
@@ -413,9 +342,25 @@ function extractRent(text, method) {
 }
 
 /**
+ * Find all (Pty) Ltd company names in text
+ */
+function findAllCompanies(text) {
+  const companies = [];
+  const pattern = /([A-Za-z0-9][\w\s\-\.&']+?)\s*\(Pty\)\s*Ltd/gi;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const fullName = match[0].trim();
+    if (!companies.includes(fullName) && fullName.length > 5) {
+      companies.push(fullName);
+    }
+  }
+  return companies;
+}
+
+/**
  * Extract tenant info from invoice
  */
-function extractTenantFromInvoice(text, method) {
+function extractTenantFromInvoice(text) {
   console.log('👤 Extracting tenant from invoice...');
   
   const tenant = {
@@ -424,60 +369,34 @@ function extractTenantFromInvoice(text, method) {
     vatNumber: null
   };
 
-  // Entity/Recipient name - multiple patterns
-  const namePatterns = [
-    /Recipient[:\s]*([A-Za-z0-9\s\(\)]+(?:Pty|Ltd|PTY|LTD)[\s\w]*)/i,
-    /Tenant[:\s]*([A-Za-z0-9\s\(\)]+(?:Pty|Ltd)[\s\w]*)/i,
-    /To[:\s]*([A-Za-z0-9\s\(\)]+(?:Pty|Ltd)[\s\w]*)/i
-  ];
-  
-  for (const pattern of namePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      tenant.name = match[1].trim();
-      console.log('👤 Found Tenant Name:', tenant.name);
-      break;
-    }
+  // Look for Recipient
+  const recipientMatch = text.match(/Recipient[:\s]+([A-Za-z0-9\s\(\)\-\.&']+?(?:Pty|Ltd)[^\n]*)/i);
+  if (recipientMatch) {
+    tenant.name = recipientMatch[1].trim();
+    console.log('👤 Tenant name:', tenant.name);
   }
 
-  // Recipient Reg No
-  const regPatterns = [
-    /Recipient\s*Reg\s*No[:\s]*([\d\/]+)/i,
-    /Reg(?:istration)?\s*No[:\s]*([\d\/]+)/i
-  ];
-  
-  for (const pattern of regPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      tenant.regNumber = match[1];
-      console.log('👤 Found Tenant Reg No:', tenant.regNumber);
-      break;
-    }
+  // Reg number
+  const regMatch = text.match(/Recipient\s*Reg\s*No[:\s]*([\d\/]+)/i);
+  if (regMatch) {
+    tenant.regNumber = regMatch[1];
+    console.log('👤 Tenant Reg No:', tenant.regNumber);
   }
 
-  // Recipient VAT No
-  const vatPatterns = [
-    /Recipient\s*VAT\s*No[:\s]*(\d+)/i,
-    /VAT\s*No[:\s]*(\d+)/i
-  ];
-  
-  for (const pattern of vatPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      tenant.vatNumber = match[1];
-      console.log('👤 Found Tenant VAT No:', tenant.vatNumber);
-      break;
-    }
+  // VAT number
+  const vatMatch = text.match(/Recipient\s*VAT\s*No[:\s]*(\d+)/i);
+  if (vatMatch) {
+    tenant.vatNumber = vatMatch[1];
+    console.log('👤 Tenant VAT No:', tenant.vatNumber);
   }
 
   return tenant;
 }
 
 /**
- * Extract landlord info from invoice (Entity = the one issuing the invoice)
- * This extracts from the "Tax Invoice & Statement" header section
+ * Extract landlord info from invoice
  */
-function extractLandlordFromInvoice(text, method) {
+function extractLandlordFromInvoice(text) {
   console.log('🏠 Extracting landlord from invoice...');
   
   const landlord = {
@@ -491,133 +410,74 @@ function extractLandlordFromInvoice(text, method) {
     branchCode: ''
   };
 
-  // Entity name (landlord - the one issuing the invoice)
-  // Multiple patterns for different formats
-  const entityPatterns = [
-    /Entity\s+([A-Za-z0-9\s\-\(\)]+?(?:Pty|PTY)\s*(?:Ltd|LTD)?)/i,
-    /From[:\s]+([A-Za-z0-9\s\-\(\)]+?(?:Pty|PTY)\s*(?:Ltd|LTD)?)/i,
-    /Lessor[:\s]+([A-Za-z0-9\s\-\(\)]+?(?:Pty|PTY)\s*(?:Ltd|LTD)?)/i,
-    /(Reflect[A-Za-z0-9\-\s]+?\s*\(Pty\)\s*Ltd)/i  // Specific for Reflect-All
-  ];
-  
-  for (const pattern of entityPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      landlord.name = match[1].trim();
-      console.log('🏠 Found Entity name:', landlord.name);
-      break;
+  // Find all companies
+  const companies = findAllCompanies(text);
+  console.log('🏢 Companies found:', companies);
+
+  // Entity is usually the landlord (issuer of invoice)
+  const entityMatch = text.match(/Entity[:\s]+([A-Za-z0-9\s\-\(\)]+?(?:Pty|PTY)\s*(?:Ltd|LTD)?)/i);
+  if (entityMatch) {
+    landlord.name = entityMatch[1].trim();
+    console.log('🏠 Landlord (Entity):', landlord.name);
+  }
+
+  // If Entity not found, look for the first company or Reflect-All pattern
+  if (!landlord.name) {
+    const reflectMatch = text.match(/Reflect[\-\s]?All[\s\d]+\s*\(Pty\)\s*Ltd/i);
+    if (reflectMatch) {
+      landlord.name = reflectMatch[0].trim();
+      console.log('🏠 Landlord (Reflect):', landlord.name);
+    } else if (companies.length > 0) {
+      landlord.name = companies[0];
+      console.log('🏠 Landlord (first company):', landlord.name);
     }
   }
 
   // Entity VAT No
-  const vatPatterns = [
-    /Entity\s*VAT\s*No\s+(\d+)/i,
-    /Vendor\s*VAT\s*No[:\s]*(\d+)/i,
-    /VAT\s*Registration[:\s]*(\d+)/i
-  ];
-  
-  for (const pattern of vatPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      landlord.vatNo = match[1].trim();
-      console.log('🏠 Found Entity VAT No:', landlord.vatNo);
-      break;
-    }
+  const vatMatch = text.match(/Entity\s*VAT\s*No[:\s]*(\d+)/i);
+  if (vatMatch) {
+    landlord.vatNo = vatMatch[1];
+    console.log('🏠 VAT No:', landlord.vatNo);
   }
 
   // Entity Reg No
-  const regPatterns = [
-    /Entity\s*Reg\s*No\s+([\d\/]+)/i,
-    /Registration\s*No[:\s]*([\d\/]+)/i,
-    /Company\s*Reg[:\s]*([\d\/]+)/i
-  ];
-  
-  for (const pattern of regPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      landlord.regNo = match[1].trim();
-      console.log('🏠 Found Entity Reg No:', landlord.regNo);
+  const regMatch = text.match(/Entity\s*Reg\s*No[:\s]*([\d\/]+)/i);
+  if (regMatch) {
+    landlord.regNo = regMatch[1];
+    console.log('🏠 Reg No:', landlord.regNo);
+  }
+
+  // Bank details
+  const bankNames = ['Nedbank', 'FNB', 'ABSA', 'Standard Bank', 'Capitec', 'Investec'];
+  for (const bank of bankNames) {
+    if (text.includes(bank)) {
+      landlord.bank = bank;
+      console.log('🏠 Bank:', landlord.bank);
       break;
     }
   }
 
-  // Bank details from "PLEASE NOTE BANK DETAILS" section
-  // Pattern: "Bank: Nedbank - Northern Gauteng /  Branch Code: 146905"
-  const bankLinePatterns = [
-    /Bank[:\s]*([A-Za-z\s\-]+?)(?:\/|\s+)Branch\s*Code[:\s]*(\d+)/i,
-    /Bank[:\s]*([A-Za-z]+)/i
-  ];
-  
-  for (const pattern of bankLinePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      landlord.bank = match[1].trim();
-      if (match[2]) {
-        landlord.branchCode = match[2].trim();
-      }
-      console.log('🏠 Found Bank:', landlord.bank);
-      break;
-    }
-  }
-  
-  // Separate branch code if not found above
-  if (!landlord.branchCode) {
-    const branchCodeMatch = text.match(/Branch\s*Code[:\s]*(\d+)/i);
-    if (branchCodeMatch) {
-      landlord.branchCode = branchCodeMatch[1].trim();
-      console.log('🏠 Found Branch Code:', landlord.branchCode);
-    }
-  }
-
-  // Account Name
-  const accountNamePatterns = [
-    /Account\s*Name[:\s]*([A-Za-z0-9\s\-]+?)(?=\s*Account\s*Number|\s*\n)/i,
-    /Account\s*Name[:\s]*([A-Za-z0-9\s\-]+)/i
-  ];
-  
-  for (const pattern of accountNamePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      // Use account name if entity name wasn't found
-      if (!landlord.name) {
-        landlord.name = match[1].trim();
-        console.log('🏠 Using Account Name as landlord:', landlord.name);
-      }
-      break;
-    }
+  // Branch Code
+  const branchCodeMatch = text.match(/Branch\s*Code[:\s]*(\d+)/i);
+  if (branchCodeMatch) {
+    landlord.branchCode = branchCodeMatch[1];
+    console.log('🏠 Branch Code:', landlord.branchCode);
   }
 
   // Account Number
-  const accountNumPatterns = [
-    /Account\s*Number[:\s]*(\d+)/i,
-    /Acc\s*No[:\s]*(\d+)/i
-  ];
-  
-  for (const pattern of accountNumPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      landlord.accountNo = match[1].trim();
-      console.log('🏠 Found Account Number:', landlord.accountNo);
-      break;
-    }
+  const accountNumMatch = text.match(/Account\s*Number[:\s]*(\d+)/i);
+  if (accountNumMatch) {
+    landlord.accountNo = accountNumMatch[1];
+    console.log('🏠 Account Number:', landlord.accountNo);
   }
 
   // Phone
-  const phonePatterns = [
-    /Tel(?:ephone)?[:\s]+(\d[\d\s\-]+\d)/i,
-    /Phone[:\s]+(\d[\d\s\-]+\d)/i
-  ];
-  
-  for (const pattern of phonePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      landlord.phone = match[1].replace(/\s/g, '');
-      console.log('🏠 Found Phone:', landlord.phone);
-      break;
-    }
+  const phoneMatch = text.match(/(?:Tel|Phone)[:\s]*(\d[\d\s\-\(\)]+)/i);
+  if (phoneMatch) {
+    landlord.phone = phoneMatch[1].trim();
+    console.log('🏠 Phone:', landlord.phone);
   }
 
-  console.log('🏠 Final landlord extracted:', landlord);
   return landlord;
 }
 
