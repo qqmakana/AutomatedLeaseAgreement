@@ -362,10 +362,24 @@ function extractTenantFromInvoice(text) {
     console.log('👤 Tenant VAT No:', tenant.vatNumber);
   }
 
-  // Look for tenant name near "Tenant / Debtor" or at top of invoice
-  const tenantMatch = text.match(/(?:Tenant|Debtor)[^\n]*\n\s*([A-Za-z][\w\s\-\.&']+?\s*\(Pty\)\s*Ltd)/i);
-  if (tenantMatch) {
-    tenant.name = tenantMatch[1].trim();
+  // Look for tenant name - company with (Pty) Ltd
+  // First, find all (Pty) Ltd companies and take the one that's NOT the landlord
+  const companyPattern = /([A-Za-z][\w\s\-\.&']+?)\s*\(Pty\)\s*Ltd/gi;
+  const companies = [];
+  let match;
+  while ((match = companyPattern.exec(text)) !== null) {
+    let name = match[0].trim();
+    // Clean up any prefixes like "Amount Due\n" or "Tenant / Debtor\n"
+    name = name.replace(/^.*?\n/, '');
+    // Skip if it's Reflect-All (that's the landlord)
+    if (!name.toLowerCase().includes('reflect')) {
+      companies.push(name);
+    }
+  }
+  
+  if (companies.length > 0) {
+    // Take the first non-landlord company
+    tenant.name = companies[0];
     console.log('👤 Tenant Name:', tenant.name);
   }
 

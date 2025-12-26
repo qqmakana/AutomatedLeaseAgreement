@@ -129,6 +129,14 @@ async function parseLeaseControlPDF(pdfBuffer) {
       financial: extractFinancialData(text)
     };
     
+    // FIX: Set lease years based on how many rental periods have rent values
+    const rentalYearsCount = countRentalYears(extractedData.financial);
+    if (rentalYearsCount > 0) {
+      extractedData.lease.years = rentalYearsCount;
+      extractedData.lease.months = 0;
+      console.log('📅 Lease years set from rental periods:', rentalYearsCount);
+    }
+    
     console.log('✅ Successfully extracted lease control data');
     console.log('📊 FINAL EXTRACTED DATA:', JSON.stringify(extractedData, null, 2));
     return extractedData;
@@ -136,6 +144,20 @@ async function parseLeaseControlPDF(pdfBuffer) {
     console.error('❌ Error parsing Lease Control PDF:', error);
     throw error;
   }
+}
+
+/**
+ * Count how many years have rent values in financial data
+ */
+function countRentalYears(financial) {
+  let count = 0;
+  for (let i = 1; i <= 5; i++) {
+    const yearKey = `year${i}`;
+    if (financial[yearKey] && financial[yearKey].basicRent && parseFloat(financial[yearKey].basicRent) > 0) {
+      count++;
+    }
+  }
+  return count;
 }
 
 /**
@@ -335,32 +357,43 @@ function extractSuretyData(text) {
   
   // Look for pattern: Person Name + Director/Member
   // The format is usually "Peter Allan MarksDirector" or "Name    Capacity"
-  const suretyPatterns = [
-    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s*(Director|Member|Owner|Partner)/i,
-    /Authorised\s*Representative\s*\n?\s*([A-Za-z\s]+?)(?:\s*\n|\s+Capacity)/i,
-    /([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*Director/i
+  // Also handle "Woodmead\nPeter Allan MarksDirector" - need to extract just the name part
+  
+  // First, find text near "Director" and extract the person name before it
+  const directorPatterns = [
+    // Pattern: "Peter Allan Marks Director" or "Peter Allan MarksDirector"
+    /([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*(Director|Member)/i,
+    // Pattern: Name immediately before Director (no space)
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?=Director)/,
+    // Authorised Representative pattern
+    /Authorised\s*Representative\s*\n?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i
   ];
   
-  for (const pattern of suretyPatterns) {
+  for (const pattern of directorPatterns) {
     const match = text.match(pattern);
     if (match) {
-      surety.name = match[1].trim();
-      if (match[2]) {
-        surety.capacity = match[2].trim();
+      let name = match[1].trim();
+      // Clean up any location prefixes (e.g., "Woodmead\nPeter" -> "Peter")
+      name = name.replace(/^[A-Za-z]+\n/, '').trim();
+      // Only accept if it looks like a person name (2-4 words, all capitalized)
+      const words = name.split(/\s+/);
+      if (words.length >= 2 && words.length <= 4 && words.every(w => /^[A-Z][a-z]+$/.test(w))) {
+        surety.name = name;
+        surety.capacity = match[2] ? match[2].trim() : 'Director';
+        console.log('👤 Surety name:', surety.name);
+        console.log('💼 Capacity:', surety.capacity);
+        break;
       }
-      console.log('👤 Surety name:', surety.name);
-      console.log('💼 Capacity:', surety.capacity);
-      break;
     }
   }
   
-  // If still not found, look specifically for "Director" preceded by name
+  // Fallback: Look for Capacity field and extract name before it
   if (!surety.name) {
-    const directorMatch = text.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?=\s*Director)/);
-    if (directorMatch) {
-      surety.name = directorMatch[1].trim();
-      surety.capacity = 'Director';
-      console.log('👤 Surety name (Director pattern):', surety.name);
+    const capacityMatch = text.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*\n?\s*Capacity\s*\n?\s*(Director|Member|Owner)/i);
+    if (capacityMatch) {
+      surety.name = capacityMatch[1].trim();
+      surety.capacity = capacityMatch[2].trim();
+      console.log('👤 Surety name (Capacity pattern):', surety.name);
     }
   }
   
@@ -389,32 +422,34 @@ function extractPremisesData(text) {
   
   console.log('🔍 Extracting premises data...');
   
-  // Extract Unit No - look for "Erf" pattern or specific unit number
-  const unitPatterns = [
-    /Unit\s*(?:No)?\s+([A-Za-z0-9\s]+?)(?=\s+Area|\s+\d+\.\d+|\n)/i,
-    /Erf\s+(\d+)/i,
-    /Property\s+([A-Za-z0-9\s,]+?)(?=\s+Stand|\s+Township|\n)/i
-  ];
+  // Invalid values to reject
+  const invalidValues = ['area', 'address', 'noarea', 'noaddress', 'no', 'n/a'];
   
-  for (const pattern of unitPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      const unit = match[1].trim();
-      // Don't use if it's just "Area" or "Address"
-      if (unit.toLowerCase() !== 'area' && unit.toLowerCase() !== 'address') {
+  // First priority: Look for "Erf NNN" pattern (most reliable)
+  const erfMatch = text.match(/Erf\s+(\d+)/i);
+  if (erfMatch) {
+    premises.unit = 'Erf ' + erfMatch[1];
+    console.log('🏢 Unit (Erf):', premises.unit);
+  }
+  
+  // Second priority: Look for Unit No with actual value
+  if (!premises.unit) {
+    const unitMatch = text.match(/Unit\s*(?:No)?\s+([A-Za-z0-9]+(?:\s+[A-Za-z0-9]+)?)/i);
+    if (unitMatch) {
+      const unit = unitMatch[1].trim();
+      if (!invalidValues.includes(unit.toLowerCase())) {
         premises.unit = unit;
         console.log('🏢 Unit:', premises.unit);
-        break;
       }
     }
   }
   
-  // If unit not found, try Erf pattern
+  // Third priority: Look for Property with Erf
   if (!premises.unit) {
-    const erfMatch = text.match(/Erf\s+(\d+[,\s]*[A-Za-z]*)/i);
-    if (erfMatch) {
-      premises.unit = 'Erf ' + erfMatch[1].trim();
-      console.log('🏢 Unit (Erf):', premises.unit);
+    const propertyMatch = text.match(/Property\s+(Erf\s+\d+[,\s]*[A-Za-z]*)/i);
+    if (propertyMatch) {
+      premises.unit = propertyMatch[1].trim();
+      console.log('🏢 Unit (Property):', premises.unit);
     }
   }
   
