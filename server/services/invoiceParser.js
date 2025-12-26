@@ -125,7 +125,8 @@ async function parseInvoicePDF(pdfBuffer) {
       tenantBank: extractTenantBankDetails(text),
       rent: extractRent(text),
       tenant: extractTenantFromInvoice(text),
-      landlord: extractLandlordFromInvoice(text)
+      landlord: extractLandlordFromInvoice(text),
+      premises: extractPremisesFromInvoice(text)  // Also extract premises from invoice
     };
 
     console.log('✅ Invoice parsing complete');
@@ -136,6 +137,42 @@ async function parseInvoicePDF(pdfBuffer) {
     console.error('❌ Invoice PDF parsing error:', error);
     throw new Error(`Invoice PDF parsing failed: ${error.message}`);
   }
+}
+
+/**
+ * Extract premises/building info from invoice
+ */
+function extractPremisesFromInvoice(text) {
+  console.log('🏢 Extracting premises from invoice...');
+  
+  const premises = {
+    buildingName: null,
+    buildingAddress: null,
+    unit: null
+  };
+  
+  // Look for "Office Park" or similar
+  const parkMatch = text.match(/([A-Za-z]+\s+(?:Office|Business|Industrial)\s+Park)/i);
+  if (parkMatch) {
+    premises.buildingName = parkMatch[1];
+    console.log('🏢 Building Name:', premises.buildingName);
+  }
+  
+  // Look for street address (e.g., "22 Stirrup Lane")
+  const streetMatch = text.match(/(\d+\s+[A-Za-z]+\s+(?:Lane|Street|Road|Avenue|Drive))/i);
+  if (streetMatch) {
+    premises.buildingAddress = streetMatch[1];
+    console.log('🏢 Building Address:', premises.buildingAddress);
+  }
+  
+  // Look for Erf/Property
+  const erfMatch = text.match(/(?:Property|Unit\s*No)\s*(Erf\s+\d+)/i);
+  if (erfMatch) {
+    premises.unit = erfMatch[1];
+    console.log('🏢 Unit:', premises.unit);
+  }
+  
+  return premises;
 }
 
 /**
@@ -364,14 +401,23 @@ function extractTenantFromInvoice(text) {
   // 1995/008835/07 (Recipient Reg)
   // Recipient VAT No
   
-  // First, find all 10-digit numbers (VAT numbers)
+  // First, extract the Entity VAT from the text (so we can exclude it)
+  const entityVatMatch = text.match(/Entity\s*VAT\s*No\s*(\d{10})/i);
+  const entityVat = entityVatMatch ? entityVatMatch[1] : null;
+  console.log('👤 Entity VAT (to exclude):', entityVat);
+  
+  // Find all 10-digit numbers (VAT numbers)
   const allVatNumbers = text.match(/\d{10}/g) || [];
   console.log('👤 All 10-digit numbers found:', allVatNumbers);
   
-  // The Entity VAT (4410191920) is usually first, Recipient VAT is second
-  // Filter out the Entity VAT number we already found
-  const entityVat = '4410191920';  // Known landlord VAT from Entity VAT No
-  const recipientVatCandidates = allVatNumbers.filter(v => v !== entityVat);
+  // Filter out the Entity VAT and account numbers (account numbers are usually after "Account")
+  const accountNumberMatch = text.match(/Account\s*(?:Number|No)?[:\s]*(\d{10})/i);
+  const accountNumber = accountNumberMatch ? accountNumberMatch[1] : null;
+  
+  const recipientVatCandidates = allVatNumbers.filter(v => 
+    v !== entityVat && v !== accountNumber
+  );
+  console.log('👤 Recipient VAT candidates:', recipientVatCandidates);
   
   if (recipientVatCandidates.length > 0) {
     // Take the first one that's not the entity VAT
