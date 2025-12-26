@@ -381,15 +381,15 @@ function extractTenantFromInvoice(text) {
   
   const tenant = {
     name: null,
-    regNumber: null,
-    vatNumber: null
+    regNo: null,
+    vatNo: null
   };
 
   // Look for Recipient Reg No
   const regMatch = text.match(/Recipient\s*Reg\s*No\s*([\d\/]+)/i);
   if (regMatch) {
-    tenant.regNumber = regMatch[1];
-    console.log('👤 Tenant Reg No:', tenant.regNumber);
+    tenant.regNo = regMatch[1];
+    console.log('👤 Tenant Reg No:', tenant.regNo);
   }
 
   // Look for Recipient VAT No - pdf-parse puts values in unusual places
@@ -421,12 +421,12 @@ function extractTenantFromInvoice(text) {
   
   if (recipientVatCandidates.length > 0) {
     // Take the first one that's not the entity VAT
-    tenant.vatNumber = recipientVatCandidates[0];
-    console.log('👤 Tenant VAT No:', tenant.vatNumber);
+    tenant.vatNo = recipientVatCandidates[0];
+    console.log('👤 Tenant VAT No:', tenant.vatNo);
   }
   
   // Also try explicit patterns
-  if (!tenant.vatNumber) {
+  if (!tenant.vatNo) {
     const vatPatterns = [
       /Recipient\s*VAT\s*No\s*(\d{10})/i,
       /(\d{10})\s*[\n\s]*(?:Entity\s*Reg|Recipient)/i  // VAT before Entity Reg or Recipient
@@ -435,8 +435,8 @@ function extractTenantFromInvoice(text) {
     for (const pattern of vatPatterns) {
       const vatMatch = text.match(pattern);
       if (vatMatch && vatMatch[1] !== entityVat) {
-        tenant.vatNumber = vatMatch[1];
-        console.log('👤 Tenant VAT No (pattern):', tenant.vatNumber);
+        tenant.vatNo = vatMatch[1];
+        console.log('👤 Tenant VAT No (pattern):', tenant.vatNo);
         break;
       }
     }

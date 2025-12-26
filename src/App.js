@@ -859,6 +859,26 @@ const LeaseDraftingSystem = () => {
         };
       }
       
+      // Apply tenant details (name, regNo, vatNo) from invoice if available
+      if (invoiceData.tenant) {
+        updated.tenant = {
+          ...updated.tenant,
+          name: invoiceData.tenant.name || updated.tenant.name,
+          regNo: invoiceData.tenant.regNo || updated.tenant.regNo,
+          vatNo: invoiceData.tenant.vatNo || updated.tenant.vatNo
+        };
+      }
+      
+      // Apply premises/building info from invoice if available
+      if (invoiceData.premises) {
+        updated.premises = {
+          ...updated.premises,
+          buildingName: invoiceData.premises.buildingName || updated.premises.buildingName,
+          buildingAddress: invoiceData.premises.buildingAddress || updated.premises.buildingAddress,
+          unit: invoiceData.premises.unit || updated.premises.unit
+        };
+      }
+      
       return updated;
     });
     
