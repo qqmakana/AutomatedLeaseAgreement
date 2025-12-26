@@ -273,11 +273,48 @@ function extractTenantData(text) {
     console.log('📋 Tenant Reg No:', tenant.regNo);
   }
   
-  // Extract VAT number
-  const vatMatch = text.match(/(?:VAT|Vat)\s*(?:No|Number)?[:\s]*(\d{10})/i);
-  if (vatMatch) {
-    tenant.vatNo = vatMatch[1];
-    console.log('📋 Tenant VAT No:', tenant.vatNo);
+  // Extract VAT number - try multiple patterns
+  // The VAT might appear before or after the label
+  const vatPatterns = [
+    /Tenant\s*VAT\s*(?:No|Number)?[:\s]*(\d{10})/i,
+    /(?:VAT|Vat)\s*(?:No|Number)?[:\s]*(\d{10})/i,
+    /(\d{10})\s*(?:VAT|Vat)\s*(?:No|Number)?/i,
+    /Recipient\s*VAT\s*(?:No|Number)?[:\s]*(\d{10})/i
+  ];
+  
+  // First, get landlord VAT so we can exclude it
+  const landlordVatMatch = text.match(/Entity\s*VAT\s*(?:No|Number)?[:\s]*(\d{10})/i) ||
+                           text.match(/Owner\s*VAT\s*(?:No|Number)?[:\s]*(\d{10})/i);
+  const landlordVat = landlordVatMatch ? landlordVatMatch[1] : null;
+  console.log('📋 Landlord VAT (to exclude):', landlordVat);
+  
+  for (const pattern of vatPatterns) {
+    const vatMatch = text.match(pattern);
+    if (vatMatch && vatMatch[1] !== landlordVat) {
+      tenant.vatNo = vatMatch[1];
+      console.log('📋 Tenant VAT No:', tenant.vatNo);
+      break;
+    }
+  }
+  
+  // If still not found, look for all 10-digit numbers and filter
+  if (!tenant.vatNo) {
+    const allVatNumbers = text.match(/\d{10}/g) || [];
+    console.log('📋 All 10-digit numbers:', allVatNumbers);
+    
+    // Exclude landlord VAT and account numbers
+    const accountMatch = text.match(/Account\s*(?:No|Number)?[:\s]*(\d{10})/i);
+    const accountNo = accountMatch ? accountMatch[1] : null;
+    
+    const candidates = allVatNumbers.filter(v => 
+      v !== landlordVat && v !== accountNo
+    );
+    console.log('📋 Tenant VAT candidates:', candidates);
+    
+    if (candidates.length > 0) {
+      tenant.vatNo = candidates[0];
+      console.log('📋 Tenant VAT No (from candidates):', tenant.vatNo);
+    }
   }
   
   // Extract physical address - look for street address pattern
