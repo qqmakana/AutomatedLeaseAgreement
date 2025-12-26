@@ -32,24 +32,30 @@ async function parseLeaseControlPDF(pdfBuffer) {
     const text = await extractTextFromPDF(pdfBuffer);
     console.log('📝 Extracted text length:', text.length);
     
-    // DEBUG: Log first 2000 chars of extracted text
-    console.log('=== RAW PDF TEXT (first 2000 chars) ===');
-    console.log(text.substring(0, 2000));
+    // DEBUG: Log first 3000 chars of extracted text
+    console.log('=== RAW PDF TEXT (first 3000 chars) ===');
+    console.log(text.substring(0, 3000));
     console.log('=== END RAW TEXT ===');
+    
+    // Normalize text for better matching
+    const normalizedText = normalizeText(text);
     
     // Extract all the data
     const extractedData = {
-      landlord: extractLandlordData(text),
-      tenant: extractTenantData(text),
-      surety: extractSuretyData(text),
-      premises: extractPremisesData(text),
-      lease: extractLeaseTerms(text),
-      financial: extractFinancialData(text)
+      landlord: extractLandlordData(text, normalizedText),
+      tenant: extractTenantData(text, normalizedText),
+      surety: extractSuretyData(text, normalizedText),
+      premises: extractPremisesData(text, normalizedText),
+      lease: extractLeaseTerms(text, normalizedText),
+      financial: extractFinancialData(text, normalizedText)
     };
     
     console.log('✅ Successfully extracted lease control data');
     console.log('📊 Extracted landlord:', extractedData.landlord);
     console.log('📊 Extracted tenant:', extractedData.tenant);
+    console.log('📊 Extracted premises:', extractedData.premises);
+    console.log('📊 Extracted lease:', extractedData.lease);
+    console.log('📊 Extracted financial:', extractedData.financial);
     return extractedData;
   } catch (error) {
     console.error('❌ Error parsing Lease Control PDF:', error);
@@ -58,9 +64,20 @@ async function parseLeaseControlPDF(pdfBuffer) {
 }
 
 /**
+ * Normalize text for better pattern matching
+ */
+function normalizeText(text) {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n/g, '\n\n');
+}
+
+/**
  * Extract landlord/owner data
  */
-function extractLandlordData(text) {
+function extractLandlordData(text, normalizedText) {
   const landlord = {
     name: '',
     regNo: '',
@@ -74,57 +91,86 @@ function extractLandlordData(text) {
   
   console.log('🔍 Searching for Owner/Lessor in text...');
   
-  // Pattern: "Owner / Lessor Reflect-All 1025 (Pty) Ltd Earle Marks Director"
-  // We need to extract "Reflect-All 1025 (Pty) Ltd"
-  
-  // First, find all company names in the format "XXX (Pty) Ltd"
-  const companyPattern = /([A-Za-z0-9\-\.&'\s]+\s*\(Pty\)\s*Ltd)/gi;
-  const allCompanies = text.match(companyPattern) || [];
+  // Find all company names - (Pty) Ltd pattern
+  const companyPattern = /([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?)\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD)/gi;
+  const allCompanies = [];
+  let companyMatch;
+  while ((companyMatch = companyPattern.exec(text)) !== null) {
+    allCompanies.push(companyMatch[0].trim());
+  }
   console.log('🏢 All companies found:', allCompanies);
   
-  // Look for Owner / Lessor section and extract company name
-  const ownerSection = text.match(/Owner\s*[\/\\]\s*Lessor\s+(.{5,100})/i);
-  if (ownerSection) {
-    console.log('📋 Owner section text:', ownerSection[1]);
-    // Find the company name pattern within this section
-    const companyInOwner = ownerSection[1].match(/([A-Za-z0-9\-\.&'\s]+\s*\(Pty\)\s*Ltd)/i);
-    if (companyInOwner) {
-      landlord.name = cleanText(companyInOwner[1]);
+  // Try multiple patterns for Owner/Lessor
+  const ownerPatterns = [
+    /Owner\s*[\/\\]\s*Lessor[\s\n]+([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i,
+    /Owner[\s\n]+([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i,
+    /Lessor[\s\n]+([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i,
+    /(?:Landlord|Property Owner)[\s\n:]+([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i
+  ];
+  
+  for (const pattern of ownerPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      landlord.name = cleanText(match[1]);
       console.log('🏠 Found Owner/Lessor:', landlord.name);
+      break;
     }
   }
   
-  // Debug: show context around "Owner" if not found
-  if (!landlord.name) {
-    const ownerIndex = text.indexOf('Owner');
-    if (ownerIndex !== -1) {
-      console.log('📋 Context around "Owner":', text.substring(ownerIndex, ownerIndex + 300));
-    }
-    // Try to find by looking for "Reflect" specifically (common pattern)
-    const reflectMatch = text.match(/(Reflect[A-Za-z0-9\-\.&'\s]+\s*\(Pty\)\s*Ltd)/i);
-    if (reflectMatch) {
-      landlord.name = cleanText(reflectMatch[1]);
+  // If still not found, try to find by context
+  if (!landlord.name && allCompanies.length > 0) {
+    // Look for Reflect pattern (common in sample)
+    const reflectCompany = allCompanies.find(c => /Reflect/i.test(c));
+    if (reflectCompany) {
+      landlord.name = cleanText(reflectCompany);
       console.log('🏠 Found Owner (Reflect pattern):', landlord.name);
     }
   }
   
-  // Owner Registration Number (Entity Reference No)
-  const ownerRegMatch = text.match(/Entity Type\s+Company[^R]*Reference No\s+([\d\/]+)/i);
-  if (ownerRegMatch) {
-    landlord.regNo = cleanText(ownerRegMatch[1]);
+  // Registration Number patterns
+  const regPatterns = [
+    /Entity\s*(?:Ref|Reference)\s*(?:No)?[\s:]+(\d{4}\/\d+\/\d+)/i,
+    /Reg(?:istration)?\s*(?:No|Number)?[\s:]+(\d{4}\/\d+\/\d+)/i,
+    /Reference\s*No[\s:]+(\d{4}\/\d+\/\d+)/i,
+    /(\d{4}\/\d{6}\/\d{2})/
+  ];
+  
+  for (const pattern of regPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      landlord.regNo = cleanText(match[1]);
+      console.log('📋 Found Landlord Reg No:', landlord.regNo);
+      break;
+    }
   }
   
-  // Phone from General Contact
-  const phoneMatch = text.match(/Telephone\s+(\d[\d\s]+)/i);
-  if (phoneMatch) {
-    landlord.phone = cleanText(phoneMatch[1]);
+  // VAT Number patterns
+  const vatPatterns = [
+    /VAT\s*(?:No|Number)?[\s:]+(\d{10})/i,
+    /Vat\s*No[\s:]+(\d+)/i
+  ];
+  
+  for (const pattern of vatPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      landlord.vatNo = cleanText(match[1]);
+      console.log('📋 Found Landlord VAT No:', landlord.vatNo);
+      break;
+    }
   }
   
-  // Mobile (if telephone not found)
-  if (!landlord.phone) {
-    const mobileMatch = text.match(/Mobile\s+(\d[\d\s]+)/i);
-    if (mobileMatch) {
-      landlord.phone = cleanText(mobileMatch[1]);
+  // Phone patterns
+  const phonePatterns = [
+    /(?:Telephone|Tel|Phone)[\s:]+(\(?0\d{2}\)?\s*\d{3}\s*\d{4})/i,
+    /(?:Telephone|Tel|Phone)[\s:]+(\d[\d\s\-]+)/i,
+    /Mobile[\s:]+(\d[\d\s\-]+)/i
+  ];
+  
+  for (const pattern of phonePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      landlord.phone = cleanText(match[1]);
+      break;
     }
   }
   
@@ -134,7 +180,7 @@ function extractLandlordData(text) {
 /**
  * Extract tenant data
  */
-function extractTenantData(text) {
+function extractTenantData(text, normalizedText) {
   const tenant = {
     name: '',
     regNo: '',
@@ -151,102 +197,160 @@ function extractTenantData(text) {
   
   console.log('🔍 Searching for Tenant/Lessee in text...');
   
-  // Tenant name is often in "List/Trading As" field
-  // Pattern: "List/Trading As Exceedprops Management Services (Pty) Ltd Entity..."
-  const tradingMatch = text.match(/List[\/\\]Trading As\s+([A-Za-z0-9\-\.&'\s]+\s*\(Pty\)\s*Ltd)/i);
-  if (tradingMatch) {
-    tenant.name = cleanText(tradingMatch[1]);
-    tenant.tradingAs = tenant.name;
-    console.log('👤 Found Tenant from Trading As:', tenant.name);
-  }
+  // Try multiple patterns for tenant name
+  const tenantPatterns = [
+    /(?:List|Trading)\s*[\/\\]?\s*Trading\s*As[\s\n]+([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i,
+    /Trading\s*As[\s\n:]+([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i,
+    /Tenant\s*[\/\\]\s*Lessee[\s\n]+([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i,
+    /Tenant[\s\n:]+([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i,
+    /Lessee[\s\n:]+([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i,
+    // Header pattern - company name at top with ID
+    /^([A-Za-z0-9][A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))\s*\(\d+\)/mi
+  ];
   
-  // Also look for tenant name at the top of document (often appears as header)
-  // Pattern: "Exceedprops Management Services (Pty) Ltd (11035)"
-  if (!tenant.name) {
-    const headerMatch = text.match(/^([A-Za-z0-9\-\.&'\s]+\s*\(Pty\)\s*Ltd)\s*\(\d+\)/mi);
-    if (headerMatch) {
-      tenant.name = cleanText(headerMatch[1]);
-      console.log('👤 Found Tenant from header:', tenant.name);
+  for (const pattern of tenantPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      tenant.name = cleanText(match[1]);
+      tenant.tradingAs = tenant.name;
+      console.log('👤 Found Tenant:', tenant.name);
+      break;
     }
   }
   
-  // Try standard Tenant / Lessee pattern
+  // If tenant not found, look for Exceedprops or similar patterns
   if (!tenant.name) {
-    const tenantSection = text.match(/Tenant\s*[\/\\]\s*Lessee\s*\n?\s*(.{5,200})/i);
-    if (tenantSection) {
-      console.log('📋 Tenant section text:', tenantSection[1]);
-      const companyInTenant = tenantSection[1].match(/([A-Za-z0-9\-\.&'\s]+\s*\(Pty\)\s*Ltd)/i);
-      if (companyInTenant) {
-        tenant.name = cleanText(companyInTenant[1]);
-        console.log('👤 Found Tenant:', tenant.name);
-      }
+    const exceedMatch = text.match(/(Exceedprops[A-Za-z0-9\-\.&'\s]*?\s*\((?:Pty|PTY)\)\s*(?:Ltd|LTD))/i);
+    if (exceedMatch) {
+      tenant.name = cleanText(exceedMatch[1]);
+      tenant.tradingAs = tenant.name;
+      console.log('👤 Found Tenant (Exceedprops pattern):', tenant.name);
     }
   }
   
-  // Debug: show context if not found
-  if (!tenant.name) {
-    const tradingIndex = text.indexOf('Trading As');
-    if (tradingIndex !== -1) {
-      console.log('📋 Context around "Trading As":', text.substring(tradingIndex, tradingIndex + 200));
+  // Registration Number
+  const regPatterns = [
+    /Ref\s*No[\s:]+(\d{4}\/\d+\/\d+)/i,
+    /Reg(?:istration)?\s*(?:No|Number)?[\s:]+(\d{4}\/\d+\/\d+)/i,
+    /Company\s*Reg[\s:]+(\d{4}\/\d+\/\d+)/i
+  ];
+  
+  for (const pattern of regPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      tenant.regNo = cleanText(match[1]);
+      console.log('📋 Found Tenant Reg No:', tenant.regNo);
+      break;
     }
   }
   
-  // Registration Number (Ref No) - get the first one which should be tenant's
-  const refMatch = text.match(/Ref No\s+([\d\/]+)/i);
-  if (refMatch) {
-    tenant.regNo = cleanText(refMatch[1]);
-    console.log('📋 Found Tenant Reg No:', tenant.regNo);
+  // VAT Number
+  const vatPatterns = [
+    /Vat\s*No[\s:]+(\d{10})/i,
+    /VAT[\s:]+(\d{10})/i
+  ];
+  
+  for (const pattern of vatPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      tenant.vatNo = cleanText(match[1]);
+      console.log('📋 Found Tenant VAT No:', tenant.vatNo);
+      break;
+    }
   }
   
-  // VAT Number - get the first one which should be tenant's
-  const vatMatch = text.match(/Vat No\s+(\d+)/i);
-  if (vatMatch) {
-    tenant.vatNo = cleanText(vatMatch[1]);
-    console.log('📋 Found Tenant VAT No:', tenant.vatNo);
+  // Physical Address (Domicile)
+  const physicalPatterns = [
+    /Domicile[\s\n:]+([A-Za-z0-9][A-Za-z0-9\s,\-\.]+?(?:Park|Street|Road|Lane|Drive|Avenue|Office|Centre|Center|Woodmead|Estate)[A-Za-z0-9\s,\-\.]*)/i,
+    /Physical\s*Address[\s\n:]+(.+?)(?=\n|Postal|Email|$)/i,
+    /Street\s*Address[\s\n:]+(.+?)(?=\n|Postal|Email|$)/i
+  ];
+  
+  for (const pattern of physicalPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      tenant.physicalAddress = cleanAddress(match[1]);
+      console.log('📍 Found Physical Address:', tenant.physicalAddress);
+      break;
+    }
   }
   
-  // Domicile Address (Physical) - more flexible matching
-  const domicileMatch = text.match(/Domicile\s+([A-Za-z0-9\s,\-\.]+(?:Park|Street|Road|Lane|Drive|Avenue|Office|Centre|Center|Woodmead)[A-Za-z0-9\s,\-\.]*)/i);
-  if (domicileMatch) {
-    tenant.physicalAddress = cleanAddress(domicileMatch[1]);
-    console.log('📍 Found Physical Address:', tenant.physicalAddress);
-  }
+  // Postal Address
+  const postalPatterns = [
+    /Postal[\s\n:]+([A-Za-z0-9][A-Za-z0-9\s,\-\.]+?(?:Park|Street|Road|Lane|Drive|Avenue|Office|Centre|Center|Woodmead|Estate|Box)[A-Za-z0-9\s,\-\.]*)/i,
+    /Postal\s*Address[\s\n:]+(.+?)(?=\n|Physical|Email|$)/i,
+    /P\.?O\.?\s*Box[\s\n:]+(.+?)(?=\n|$)/i
+  ];
   
-  // Postal Address - more flexible matching  
-  const postalMatch = text.match(/Postal\s+([A-Za-z0-9\s,\-\.]+(?:Park|Street|Road|Lane|Drive|Avenue|Office|Centre|Center|Woodmead)[A-Za-z0-9\s,\-\.]*)/i);
-  if (postalMatch) {
-    tenant.postalAddress = cleanAddress(postalMatch[1]);
-    console.log('📍 Found Postal Address:', tenant.postalAddress);
+  for (const pattern of postalPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      tenant.postalAddress = cleanAddress(match[1]);
+      console.log('📍 Found Postal Address:', tenant.postalAddress);
+      break;
+    }
   }
   
   // Email
-  const emailMatch = text.match(/Email\s+([\w.\-@]+@[\w.\-]+)/i);
+  const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
   if (emailMatch) {
     tenant.email = cleanText(emailMatch[1]);
   }
   
-  // Bank details from Banking section
-  const bankMatch = text.match(/Banking\s*\n?\s*Bank\s+([A-Za-z]+)/i);
-  if (bankMatch) {
-    tenant.bankName = cleanText(bankMatch[1]);
+  // Bank details
+  const bankPatterns = [
+    /Bank[\s\n:]+([A-Za-z]+(?:\s+Bank)?)/i,
+    /Banking[\s\n]+Bank[\s\n:]+([A-Za-z]+)/i
+  ];
+  
+  for (const pattern of bankPatterns) {
+    const match = text.match(pattern);
+    if (match && !match[1].toLowerCase().includes('account')) {
+      tenant.bankName = cleanText(match[1]);
+      break;
+    }
   }
   
-  // Bank Account Number
-  const accountNoMatch = text.match(/Account No\s+(\d+)/i);
-  if (accountNoMatch) {
-    tenant.bankAccountNumber = cleanText(accountNoMatch[1]);
+  // Account Number
+  const accountPatterns = [
+    /Account\s*(?:No|Number)?[\s:]+(\d{8,15})/i,
+    /Acc(?:ount)?\s*No[\s:]+(\d+)/i
+  ];
+  
+  for (const pattern of accountPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      tenant.bankAccountNumber = cleanText(match[1]);
+      break;
+    }
   }
   
   // Branch Code
-  const branchNoMatch = text.match(/Branch No\s+(\d+)/i);
-  if (branchNoMatch) {
-    tenant.bankBranchCode = cleanText(branchNoMatch[1]);
+  const branchPatterns = [
+    /Branch\s*(?:No|Code)?[\s:]+(\d{5,6})/i,
+    /Branch[\s:]+(\d+)/i
+  ];
+  
+  for (const pattern of branchPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      tenant.bankBranchCode = cleanText(match[1]);
+      break;
+    }
   }
   
-  // Bank Account Name
-  const accountNameMatch = text.match(/Account Name\s+([A-Za-z0-9\s\(\)\-\.&']+(?:Pty|PTY)?\s*(?:Ltd|LTD)?)/i);
-  if (accountNameMatch) {
-    tenant.bankAccountHolder = cleanText(accountNameMatch[1]);
+  // Account Name/Holder
+  const holderPatterns = [
+    /Account\s*Name[\s\n:]+([A-Za-z0-9][A-Za-z0-9\s\(\)\-\.&']+)/i,
+    /Account\s*Holder[\s\n:]+([A-Za-z0-9][A-Za-z0-9\s\(\)\-\.&']+)/i
+  ];
+  
+  for (const pattern of holderPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      tenant.bankAccountHolder = cleanText(match[1]);
+      break;
+    }
   }
   
   return tenant;
@@ -255,7 +359,7 @@ function extractTenantData(text) {
 /**
  * Extract surety/representative data
  */
-function extractSuretyData(text) {
+function extractSuretyData(text, normalizedText) {
   const surety = {
     name: '',
     idNumber: '',
@@ -263,22 +367,31 @@ function extractSuretyData(text) {
     capacity: ''
   };
   
-  // Authorised Representative
-  const repMatch = text.match(/Authorised Representative\s+([A-Za-z\s]+?)(?:\s+Capacity)/i);
-  if (repMatch) {
-    surety.name = cleanText(repMatch[1]);
+  // Representative patterns
+  const repPatterns = [
+    /(?:Authorised|Authorized)\s*Representative[\s\n:]+([A-Za-z][A-Za-z\s]+?)(?=\s+Capacity|\s+Director|\s+Member|\n|$)/i,
+    /Representative[\s\n:]+([A-Za-z][A-Za-z\s]+?)(?=\s+Capacity|\n|$)/i,
+    /Surety[\s\n:]+([A-Za-z][A-Za-z\s]+?)(?=\s+ID|\s+Identity|\n|$)/i
+  ];
+  
+  for (const pattern of repPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      surety.name = cleanText(match[1]);
+      break;
+    }
   }
   
   // Capacity
-  const capacityMatch = text.match(/Capacity\s+(Director|Member|Owner|Partner)/i);
+  const capacityMatch = text.match(/Capacity[\s\n:]+(\w+)/i);
   if (capacityMatch) {
     surety.capacity = cleanText(capacityMatch[1]);
   }
   
-  // Get address from tenant physical address as fallback
-  const domicileMatch = text.match(/Domicile\s+(.+?)(?=Postal|General Contact)/is);
-  if (domicileMatch) {
-    surety.address = cleanAddress(domicileMatch[1]);
+  // ID Number (13 digit SA ID)
+  const idMatch = text.match(/(?:ID|Identity)\s*(?:No|Number)?[\s:]+(\d{13})/i);
+  if (idMatch) {
+    surety.idNumber = cleanText(idMatch[1]);
   }
   
   return surety;
@@ -287,7 +400,7 @@ function extractSuretyData(text) {
 /**
  * Extract premises data
  */
-function extractPremisesData(text) {
+function extractPremisesData(text, normalizedText) {
   const premises = {
     unit: '',
     buildingName: '',
@@ -297,75 +410,95 @@ function extractPremisesData(text) {
     permittedUse: ''
   };
   
-  // Unit No - "Unit No Erf 726 417.00" -> extract "Erf 726"
-  const unitMatch = text.match(/Unit No\s+([A-Za-z0-9\s]+?)(?=\s+\d+\.\d+|\s+Area|\s+\n)/i);
-  if (unitMatch) {
-    premises.unit = cleanText(unitMatch[1]);
-    console.log('🏢 Found Unit:', premises.unit);
-  }
+  console.log('🔍 Extracting premises data...');
   
-  // Alternative: Property name
-  if (!premises.unit) {
-    const propMatch = text.match(/Property\s+([A-Za-z0-9\s,]+?)(?=\s+Stand|\s+Township|\s+Address|\n)/i);
-    if (propMatch) {
-      premises.unit = cleanText(propMatch[1]);
-      console.log('🏢 Found Unit (from Property):', premises.unit);
+  // Unit patterns
+  const unitPatterns = [
+    /Unit\s*(?:No)?[\s:]+([A-Za-z0-9][A-Za-z0-9\s\-]+?)(?=\s+\d+\.\d+|\s+Area|\s*\n|$)/i,
+    /(?:Erf|ERF|Stand)\s*(\d+)/i,
+    /Property[\s\n:]+([A-Za-z0-9][A-Za-z0-9\s,]+?)(?=\s+Stand|\s+Township|\s+Address|\n|$)/i,
+    /Unit[\s:]+([^\n]+)/i
+  ];
+  
+  for (const pattern of unitPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      premises.unit = cleanText(match[1]);
+      console.log('🏢 Found Unit:', premises.unit);
+      break;
     }
   }
   
-  // Stand No / Township for Building Name
-  const standMatch = text.match(/Stand No\s+Township\s*\n?\s*([A-Za-z0-9\s,]+?)(?=\s+Address|\n)/i);
-  if (standMatch) {
-    premises.buildingName = cleanText(standMatch[1]);
-  }
+  // Building Name patterns
+  const buildingPatterns = [
+    /(?:Property|Building)[\s\n:]+([A-Za-z0-9][A-Za-z0-9\s,]+?(?:Park|Estate|Centre|Center|Office|Building)[A-Za-z0-9\s,]*)/i,
+    /Stand\s*No[\s\n]+Township[\s\n:]+([A-Za-z0-9\s,]+?)(?=\s+Address|\n|$)/i,
+    /Township[\s\n:]+([A-Za-z]+)/i
+  ];
   
-  // Property (Building Name) - "Erf 726, Woodmead"
-  if (!premises.buildingName) {
-    const buildingMatch = text.match(/Property\s*\n?\s*([A-Za-z0-9\s,]+?(?:Woodmead|Park|Estate|Centre|Center|Office))/i);
-    if (buildingMatch) {
-      premises.buildingName = cleanText(buildingMatch[1]);
+  for (const pattern of buildingPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      premises.buildingName = cleanText(match[1]);
       console.log('🏢 Found Building:', premises.buildingName);
+      break;
     }
   }
   
-  // Address - "22 Stirrup Lane, Woodmead Office Park, Woodmead"
-  const addressMatch = text.match(/Address\s*\n?\s*([0-9]+\s+[A-Za-z\s,]+(?:Park|Street|Road|Lane|Drive|Avenue|Office)[A-Za-z0-9\s,]*)/i);
-  if (addressMatch) {
-    premises.buildingAddress = cleanAddress(addressMatch[1]);
-    console.log('📍 Found Building Address:', premises.buildingAddress);
-  }
+  // Building Address patterns
+  const addressPatterns = [
+    /Address[\s\n:]+(\d+[A-Za-z0-9\s,\-\.]+?(?:Park|Street|Road|Lane|Drive|Avenue|Office)[A-Za-z0-9\s,\-\.]*)/i,
+    /Physical\s*Address[\s\n:]+(.+?)(?=\n\n|Postal|$)/i,
+    /(\d+\s+[A-Za-z]+\s+(?:Street|Road|Lane|Drive|Avenue)[^,\n]*(?:,\s*[A-Za-z\s]+)?)/i
+  ];
   
-  // Area (Size in m²) - look for pattern like "417.00" after Unit info
-  // First try Main Unit area
-  const mainUnitMatch = text.match(/\*\s*Main Unit\s+(\d+\.?\d*)/i);
-  if (mainUnitMatch) {
-    premises.size = mainUnitMatch[1];
-    console.log('📐 Found Size (Main Unit):', premises.size);
-  }
-  
-  // Alternative: Area column value
-  if (!premises.size) {
-    const areaMatch = text.match(/Area\s+No of Units[\s\S]*?(\d+\.?\d+)\s*\n/i);
-    if (areaMatch) {
-      premises.size = areaMatch[1];
-      console.log('📐 Found Size (Area):', premises.size);
+  for (const pattern of addressPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      premises.buildingAddress = cleanAddress(match[1]);
+      console.log('📍 Found Building Address:', premises.buildingAddress);
+      break;
     }
   }
   
-  // Alternative: Look for number after Unit No
-  if (!premises.size) {
-    const unitAreaMatch = text.match(/Unit No\s+[A-Za-z0-9\s]+\s+(\d+\.?\d+)/i);
-    if (unitAreaMatch) {
-      premises.size = unitAreaMatch[1];
-      console.log('📐 Found Size (after Unit):', premises.size);
+  // Size (Area in m²) patterns
+  const sizePatterns = [
+    /\*?\s*Main\s*Unit[\s:]+(\d+\.?\d*)/i,
+    /Area[\s:]+(\d+\.?\d*)\s*(?:m²|sqm|m2)?/i,
+    /Size[\s:]+(\d+\.?\d*)\s*(?:m²|sqm|m2)?/i,
+    /(\d{2,4}\.\d{2})\s*(?:m²|sqm|m2)/i,
+    /Unit\s*No[^\n]*?(\d{2,4}\.\d{2})/i
+  ];
+  
+  for (const pattern of sizePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      premises.size = match[1];
+      console.log('📐 Found Size:', premises.size);
+      break;
     }
   }
   
-  // Permitted Usage
-  const usageMatch = text.match(/Permitted Usage\s*\n?\s*([A-Za-z\s,.&]+?)(?=\n\n|Base Rentals|Recoveries)/is);
-  if (usageMatch) {
-    premises.permittedUse = cleanText(usageMatch[1]);
-    console.log('📋 Found Permitted Use:', premises.permittedUse);
+  // Percentage
+  const percentMatch = text.match(/(\d+\.?\d*)\s*%/);
+  if (percentMatch && parseFloat(percentMatch[1]) < 100) {
+    premises.percentage = percentMatch[1] + '%';
+  }
+  
+  // Permitted Usage patterns
+  const usagePatterns = [
+    /Permitted\s*Usage[\s\n:]+([A-Za-z][A-Za-z\s,.&]+?)(?=\n\n|Base\s*Rentals|Recoveries|$)/is,
+    /(?:Use|Usage)[\s\n:]+([A-Za-z][A-Za-z\s,.&]+?)(?=\n\n|$)/i,
+    /Purpose[\s\n:]+([A-Za-z][A-Za-z\s,.&]+?)(?=\n|$)/i
+  ];
+  
+  for (const pattern of usagePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      premises.permittedUse = cleanText(match[1]);
+      console.log('📋 Found Permitted Use:', premises.permittedUse);
+      break;
+    }
   }
   
   return premises;
@@ -374,7 +507,7 @@ function extractPremisesData(text) {
 /**
  * Extract lease terms
  */
-function extractLeaseTerms(text) {
+function extractLeaseTerms(text, normalizedText) {
   const lease = {
     years: 3,
     months: 0,
@@ -385,38 +518,92 @@ function extractLeaseTerms(text) {
     optionExerciseDate: ''
   };
   
-  // Lease Starts
-  const startMatch = text.match(/Lease Starts\s+(\d{2}\/\d{2}\/\d{4})/i);
-  if (startMatch) {
-    lease.commencementDate = convertDateFormat(startMatch[1]);
+  console.log('🔍 Extracting lease terms...');
+  
+  // Date formats: DD/MM/YYYY or YYYY-MM-DD
+  const datePattern1 = /(\d{2}\/\d{2}\/\d{4})/;
+  const datePattern2 = /(\d{4}-\d{2}-\d{2})/;
+  
+  // Lease Start Date patterns
+  const startPatterns = [
+    /Lease\s*Starts?[\s\n:]+(\d{2}\/\d{2}\/\d{4})/i,
+    /(?:Start|Commencement)\s*Date[\s\n:]+(\d{2}\/\d{2}\/\d{4})/i,
+    /(?:Start|Commencement)\s*Date[\s\n:]+(\d{4}-\d{2}-\d{2})/i,
+    /From[\s\n:]+(\d{2}\/\d{2}\/\d{4})/i
+  ];
+  
+  for (const pattern of startPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      lease.commencementDate = convertDateFormat(match[1]);
+      console.log('📅 Found Start Date:', lease.commencementDate);
+      break;
+    }
   }
   
-  // Lease Ends
-  const endMatch = text.match(/Lease Ends\s+(\d{2}\/\d{2}\/\d{4})/i);
-  if (endMatch) {
-    lease.terminationDate = convertDateFormat(endMatch[1]);
+  // Lease End Date patterns
+  const endPatterns = [
+    /Lease\s*Ends?[\s\n:]+(\d{2}\/\d{2}\/\d{4})/i,
+    /(?:End|Termination)\s*Date[\s\n:]+(\d{2}\/\d{2}\/\d{4})/i,
+    /(?:End|Termination)\s*Date[\s\n:]+(\d{4}-\d{2}-\d{2})/i,
+    /To[\s\n:]+(\d{2}\/\d{2}\/\d{4})/i
+  ];
+  
+  for (const pattern of endPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      lease.terminationDate = convertDateFormat(match[1]);
+      console.log('📅 Found End Date:', lease.terminationDate);
+      break;
+    }
   }
   
   // Period in Months
-  const periodMatch = text.match(/Period in Months\s+(\d+)/i);
-  if (periodMatch) {
-    const totalMonths = parseInt(periodMatch[1]);
-    lease.years = Math.floor(totalMonths / 12);
-    lease.months = totalMonths % 12;
+  const periodPatterns = [
+    /Period\s*(?:in)?\s*Months?[\s\n:]+(\d+)/i,
+    /Lease\s*Period[\s\n:]+(\d+)\s*months?/i,
+    /Duration[\s\n:]+(\d+)\s*months?/i
+  ];
+  
+  for (const pattern of periodPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const totalMonths = parseInt(match[1]);
+      lease.years = Math.floor(totalMonths / 12);
+      lease.months = totalMonths % 12;
+      console.log('📅 Found Period:', totalMonths, 'months');
+      break;
+    }
   }
   
   // Option Period
-  const optionPeriodMatch = text.match(/Option Period\s*\(in months\)\s*(\d+)/i);
-  if (optionPeriodMatch) {
-    const optionMonths = parseInt(optionPeriodMatch[1]);
-    lease.optionYears = Math.floor(optionMonths / 12);
-    lease.optionMonths = optionMonths % 12;
+  const optionPatterns = [
+    /Option\s*Period[\s\n]*\(?(?:in)?\s*months?\)?[\s\n:]+(\d+)/i,
+    /Option[\s\n:]+(\d+)\s*months?/i
+  ];
+  
+  for (const pattern of optionPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const optionMonths = parseInt(match[1]);
+      lease.optionYears = Math.floor(optionMonths / 12);
+      lease.optionMonths = optionMonths % 12;
+      break;
+    }
   }
   
-  // Exercise By
-  const exerciseMatch = text.match(/Exercise By\s+(\d{2}\/\d{2}\/\d{4})/i);
-  if (exerciseMatch) {
-    lease.optionExerciseDate = convertDateFormat(exerciseMatch[1]);
+  // Exercise By Date
+  const exercisePatterns = [
+    /Exercise\s*By[\s\n:]+(\d{2}\/\d{2}\/\d{4})/i,
+    /Option\s*Exercise[\s\n:]+(\d{2}\/\d{2}\/\d{4})/i
+  ];
+  
+  for (const pattern of exercisePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      lease.optionExerciseDate = convertDateFormat(match[1]);
+      break;
+    }
   }
   
   return lease;
@@ -425,7 +612,7 @@ function extractLeaseTerms(text) {
 /**
  * Extract financial/rental data
  */
-function extractFinancialData(text) {
+function extractFinancialData(text, normalizedText) {
   const financial = {
     year1: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
     year2: { basicRent: '', security: '', refuse: '', rates: '', sewerageWater: '', from: '', to: '' },
@@ -442,17 +629,26 @@ function extractFinancialData(text) {
     advertisingContribution: 'N/A'
   };
   
-  // Find all rental entries in the Base Rentals section
-  // Pattern: From Date | To Date | Amount | Rate | Escalation %
-  const rentalPattern = /(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/g;
+  console.log('🔍 Extracting financial data...');
+  
+  // Find rental entries - multiple pattern attempts
+  // Pattern 1: From Date | To Date | Amount | Rate | Escalation %
+  const rentalPattern1 = /(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/g;
+  
+  // Pattern 2: Just amounts with dates
+  const rentalPattern2 = /(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d,]+\.?\d*)/g;
+  
+  // Pattern 3: Basic Rent with amount
+  const rentPattern3 = /(?:Basic\s*)?Rent(?:al)?[\s\n:]+R?\s*([\d,]+\.?\d*)/gi;
   
   let match;
   let yearIndex = 1;
   
-  while ((match = rentalPattern.exec(text)) !== null && yearIndex <= 5) {
+  // Try pattern 1 first (most complete)
+  while ((match = rentalPattern1.exec(text)) !== null && yearIndex <= 5) {
     const fromDate = convertDateFormat(match[1]);
     const toDate = convertDateFormat(match[2]);
-    const amount = match[3].replace(',', '');
+    const amount = match[3].replace(/,/g, '');
     const escalation = match[5];
     
     const yearKey = `year${yearIndex}`;
@@ -460,26 +656,100 @@ function extractFinancialData(text) {
       financial[yearKey].basicRent = amount;
       financial[yearKey].from = fromDate;
       financial[yearKey].to = toDate;
+      console.log(`📊 Found Year ${yearIndex} Rent:`, amount);
     }
     
     // Get escalation rate from first entry
     if (yearIndex === 1) {
       financial.escalationRate = escalation;
+      console.log('📊 Found Escalation Rate:', escalation);
     }
     
     yearIndex++;
   }
   
-  // Cash Deposit
-  const depositMatch = text.match(/Cash Amount Required\s+([\d,.]+)/i);
-  if (depositMatch) {
-    financial.deposit = depositMatch[1].replace(',', '');
+  // If no results, try pattern 2
+  if (yearIndex === 1) {
+    while ((match = rentalPattern2.exec(text)) !== null && yearIndex <= 5) {
+      const fromDate = convertDateFormat(match[1]);
+      const toDate = convertDateFormat(match[2]);
+      const amount = match[3].replace(/,/g, '');
+      
+      const yearKey = `year${yearIndex}`;
+      if (financial[yearKey]) {
+        financial[yearKey].basicRent = amount;
+        financial[yearKey].from = fromDate;
+        financial[yearKey].to = toDate;
+        console.log(`📊 Found Year ${yearIndex} Rent (pattern 2):`, amount);
+      }
+      
+      yearIndex++;
+    }
+  }
+  
+  // If still no results, try simple rent pattern
+  if (yearIndex === 1) {
+    const rentMatches = text.matchAll(rentPattern3);
+    for (const rentMatch of rentMatches) {
+      if (yearIndex > 5) break;
+      const amount = rentMatch[1].replace(/,/g, '');
+      if (parseFloat(amount) > 1000) { // Filter out small numbers
+        const yearKey = `year${yearIndex}`;
+        if (financial[yearKey]) {
+          financial[yearKey].basicRent = amount;
+          console.log(`📊 Found Year ${yearIndex} Rent (simple):`, amount);
+        }
+        yearIndex++;
+      }
+    }
+  }
+  
+  // Deposit patterns
+  const depositPatterns = [
+    /Cash\s*Amount\s*Required[\s\n:]+R?\s*([\d,]+\.?\d*)/i,
+    /Deposit[\s\n:]+R?\s*([\d,]+\.?\d*)/i,
+    /Security\s*Deposit[\s\n:]+R?\s*([\d,]+\.?\d*)/i
+  ];
+  
+  for (const pattern of depositPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      financial.deposit = match[1].replace(/,/g, '');
+      console.log('📊 Found Deposit:', financial.deposit);
+      break;
+    }
   }
   
   // Lease Fees
-  const leaseFeesMatch = text.match(/Lease Fees Amount\s+([\d,.]+)/i);
-  if (leaseFeesMatch) {
-    financial.leaseFee = leaseFeesMatch[1].replace(',', '');
+  const feePatterns = [
+    /Lease\s*Fees?\s*Amount[\s\n:]+R?\s*([\d,]+\.?\d*)/i,
+    /Admin(?:istration)?\s*Fee[\s\n:]+R?\s*([\d,]+\.?\d*)/i
+  ];
+  
+  for (const pattern of feePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      financial.leaseFee = match[1].replace(/,/g, '');
+      break;
+    }
+  }
+  
+  // Escalation Rate (if not found above)
+  if (financial.escalationRate === '6') {
+    const escPatterns = [
+      /Escalation[\s\n:]+(\d+\.?\d*)\s*%/i,
+      /(\d+\.?\d*)\s*%\s*(?:escalation|increase)/i,
+      /Annual\s*Increase[\s\n:]+(\d+\.?\d*)\s*%/i
+    ];
+    
+    for (const pattern of escPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        financial.escalationRate = match[1];
+        console.log('📊 Found Escalation Rate:', financial.escalationRate);
+        break;
+      }
+    }
   }
   
   return financial;
@@ -501,6 +771,7 @@ function cleanAddress(text) {
   return text
     .replace(/\s+/g, ' ')
     .replace(/,\s*,/g, ',')
+    .replace(/\n/g, ', ')
     .trim();
 }
 
@@ -509,6 +780,11 @@ function cleanAddress(text) {
  */
 function convertDateFormat(dateStr) {
   if (!dateStr) return '';
+  // Already in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr;
+  }
+  // Convert from DD/MM/YYYY
   const parts = dateStr.split('/');
   if (parts.length === 3) {
     return `${parts[2]}-${parts[1]}-${parts[0]}`;
@@ -517,4 +793,3 @@ function convertDateFormat(dateStr) {
 }
 
 module.exports = { parseLeaseControlPDF };
-
