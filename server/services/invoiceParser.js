@@ -426,11 +426,38 @@ function extractLandlordFromInvoice(text) {
     console.log('🏠 VAT No:', landlord.vatNo);
   }
 
-  // Entity Reg No
-  const regMatch = text.match(/Entity\s*Reg\s*No\s*([\d\/]+)/i);
-  if (regMatch) {
-    landlord.regNo = regMatch[1];
-    console.log('🏠 Reg No:', landlord.regNo);
+  // Entity Reg No - number may appear before or after the label in pdf-parse
+  const regPatterns = [
+    /Entity\s*Reg\s*No\s*([\d\/]+)/i,  // Label then number
+    /([\d]{4}\/[\d]+\/[\d]+)\s*[\n\s]*(?:[\d]+\s*)?Entity\s*Reg\s*No/i,  // Number before label
+    /Entity\s*Reg\s*No[\s\S]{0,20}?([\d]{4}\/[\d]+\/[\d]+)/i  // Label with number nearby
+  ];
+  
+  for (const pattern of regPatterns) {
+    const regMatch = text.match(pattern);
+    if (regMatch) {
+      landlord.regNo = regMatch[1];
+      console.log('🏠 Reg No:', landlord.regNo);
+      break;
+    }
+  }
+  
+  // If still not found, look for registration numbers and take the one for Entity (usually first)
+  if (!landlord.regNo) {
+    const allRegNos = text.match(/\d{4}\/\d{5,}\/\d{2}/g) || [];
+    // Find the one near "Entity" 
+    const entityIndex = text.toLowerCase().indexOf('entity reg');
+    if (entityIndex >= 0 && allRegNos.length > 0) {
+      // Look for reg number within 100 chars before Entity Reg
+      const textBefore = text.substring(Math.max(0, entityIndex - 100), entityIndex);
+      for (const regNo of allRegNos) {
+        if (textBefore.includes(regNo)) {
+          landlord.regNo = regNo;
+          console.log('🏠 Reg No (nearby):', landlord.regNo);
+          break;
+        }
+      }
+    }
   }
 
   // Bank details from "PLEASE NOTE BANK DETAILS" section
