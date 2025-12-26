@@ -1,13 +1,10 @@
 /**
  * Invoice Parser Service
  * Extracts deposit, utilities, and tenant bank details from invoice PDFs
- * Fixed: Now uses inline Python script like leaseControlParser.js
+ * Uses pdf-parse (JavaScript) for reliable PDF text extraction
  */
 
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
+const pdfParse = require('pdf-parse');
 
 /**
  * Parse Invoice PDF and extract relevant data
@@ -15,91 +12,41 @@ const os = require('os');
  * @returns {Object} - Extracted invoice data
  */
 async function parseInvoicePDF(pdfBuffer) {
-  return new Promise((resolve, reject) => {
-    // Create a temporary file for the PDF
-    const tempFile = path.join(os.tmpdir(), `invoice_${Date.now()}.pdf`);
-    fs.writeFileSync(tempFile, pdfBuffer);
+  try {
+    console.log('🧾 Parsing Invoice PDF...');
     
-    // Inline Python script (same approach as leaseControlParser.js)
-    const pythonScript = `
-import pdfplumber
-import sys
+    // Extract text using pdf-parse (JavaScript)
+    const data = await pdfParse(pdfBuffer);
+    const text = data.text;
+    
+    console.log('📝 Extracted text length:', text.length);
 
-try:
-    pdf = pdfplumber.open(sys.argv[1])
-    text = '\\n'.join([page.extract_text() or '' for page in pdf.pages])
-    pdf.close()
-    print(text)
-except Exception as e:
-    print(f"ERROR: {str(e)}", file=sys.stderr)
-    sys.exit(1)
-`;
-    
-    // Run Python with inline script
-    const python = spawn('python', ['-c', pythonScript, tempFile]);
-    
-    let stdout = '';
-    let stderr = '';
-    
-    python.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    
-    python.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    
-    python.on('close', (code) => {
-      // Clean up temp file
-      try { 
-        fs.unlinkSync(tempFile); 
-      } catch (e) {
-        console.error('Failed to delete temp file:', e);
-      }
-      
-      if (code !== 0) {
-        console.error(`Python script exited with code ${code}`);
-        console.error(`Python stderr: ${stderr}`);
-        return reject(new Error(`Invoice PDF parsing failed: ${stderr}`));
-      }
-      
-      const text = stdout;
-      console.log('🧾 Parsing Invoice PDF...');
-      console.log('📝 Extracted text length:', text.length);
+    const extractedData = {
+      deposit: extractDeposit(text),
+      utilities: extractUtilities(text),
+      tenantBank: extractTenantBankDetails(text),
+      rent: extractRent(text),
+      tenant: extractTenantFromInvoice(text),
+      landlord: extractLandlordFromInvoice(text)
+    };
 
-      try {
-        const extractedData = {
-          deposit: extractDeposit(text),
-          utilities: extractUtilities(text),
-          tenantBank: extractTenantBankDetails(text),
-          rent: extractRent(text),
-          tenant: extractTenantFromInvoice(text),
-          landlord: extractLandlordFromInvoice(text)
-        };
-
-        console.log('✅ Invoice parsing complete');
-        console.log('📋 Extracted:', {
-          deposit: extractedData.deposit || 'N/A',
-          electricity: extractedData.utilities.electricity || 'N/A',
-          water: extractedData.utilities.water || 'N/A',
-          sewerage: extractedData.utilities.sewerage || 'N/A',
-          rent: extractedData.rent || 'N/A',
-          landlordName: extractedData.landlord?.name || 'N/A',
-          landlordVat: extractedData.landlord?.vatNo || 'N/A',
-          landlordRegNo: extractedData.landlord?.regNo || 'N/A'
-        });
-
-        resolve(extractedData);
-      } catch (error) {
-        reject(new Error(`Invoice data extraction failed: ${error.message}`));
-      }
+    console.log('✅ Invoice parsing complete');
+    console.log('📋 Extracted:', {
+      deposit: extractedData.deposit || 'N/A',
+      electricity: extractedData.utilities.electricity || 'N/A',
+      water: extractedData.utilities.water || 'N/A',
+      sewerage: extractedData.utilities.sewerage || 'N/A',
+      rent: extractedData.rent || 'N/A',
+      landlordName: extractedData.landlord?.name || 'N/A',
+      landlordVat: extractedData.landlord?.vatNo || 'N/A',
+      landlordRegNo: extractedData.landlord?.regNo || 'N/A'
     });
-    
-    python.on('error', (err) => {
-      try { fs.unlinkSync(tempFile); } catch (e) {}
-      reject(new Error(`Failed to run Python: ${err.message}`));
-    });
-  });
+
+    return extractedData;
+  } catch (error) {
+    console.error('❌ Invoice PDF parsing error:', error);
+    throw new Error(`Invoice PDF parsing failed: ${error.message}`);
+  }
 }
 
 /**

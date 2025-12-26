@@ -1,67 +1,22 @@
 /**
  * Lease Control Schedule PDF Parser
  * Extracts all lease data from Lease Control Schedule PDF documents
- * Uses Python pdfplumber for reliable PDF text extraction
+ * Uses pdf-parse (JavaScript) for reliable PDF text extraction
  */
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+const pdfParse = require('pdf-parse');
 
 /**
- * Extract text from PDF using Python pdfplumber
+ * Extract text from PDF using pdf-parse (JavaScript)
  */
-async function extractTextWithPython(pdfBuffer) {
-  return new Promise((resolve, reject) => {
-    // Write buffer to temp file
-    const tempFile = path.join(os.tmpdir(), `lease_control_${Date.now()}.pdf`);
-    fs.writeFileSync(tempFile, pdfBuffer);
-    
-    const pythonScript = `
-import pdfplumber
-import sys
-import json
-
-try:
-    pdf = pdfplumber.open(sys.argv[1])
-    text = '\\n'.join([page.extract_text() or '' for page in pdf.pages])
-    print(text)
-    pdf.close()
-except Exception as e:
-    print(f"ERROR: {str(e)}", file=sys.stderr)
-    sys.exit(1)
-`;
-    
-    const python = spawn('python', ['-c', pythonScript, tempFile]);
-    
-    let stdout = '';
-    let stderr = '';
-    
-    python.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    
-    python.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    
-    python.on('close', (code) => {
-      // Clean up temp file
-      try { fs.unlinkSync(tempFile); } catch (e) {}
-      
-      if (code !== 0) {
-        reject(new Error(`Python PDF extraction failed: ${stderr}`));
-      } else {
-        resolve(stdout);
-      }
-    });
-    
-    python.on('error', (err) => {
-      try { fs.unlinkSync(tempFile); } catch (e) {}
-      reject(new Error(`Failed to run Python: ${err.message}`));
-    });
-  });
+async function extractTextFromPDF(pdfBuffer) {
+  try {
+    const data = await pdfParse(pdfBuffer);
+    return data.text;
+  } catch (error) {
+    console.error('PDF extraction error:', error);
+    throw new Error(`PDF text extraction failed: ${error.message}`);
+  }
 }
 
 /**
@@ -73,8 +28,8 @@ async function parseLeaseControlPDF(pdfBuffer) {
   try {
     console.log('📄 Parsing Lease Control Schedule PDF...');
     
-    // Extract text using Python pdfplumber
-    const text = await extractTextWithPython(pdfBuffer);
+    // Extract text using pdf-parse (JavaScript)
+    const text = await extractTextFromPDF(pdfBuffer);
     console.log('📝 Extracted text length:', text.length);
     
     // DEBUG: Log first 2000 chars of extracted text
