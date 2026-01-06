@@ -14,7 +14,10 @@ const {
   convertInchesToTwip,
   HeadingLevel,
   TableLayoutType,
-  UnderlineType
+  UnderlineType,
+  Footer,
+  TabStopType,
+  PageNumber
 } = require('docx');
 
 async function generateLeaseWord(leaseData) {
@@ -96,11 +99,13 @@ async function generateLeaseWord(leaseData) {
     right: { style: BorderStyle.NONE },
   };
 
-  // Helper to create a text run
-  const text = (content, bold = false) => new TextRun({ text: content || '', bold, font: "Arial", size: 18 }); // 9pt = 18 half-points
+  const upper = (val) => (val ?? '').toString().toUpperCase();
 
-  // Helper to create bold text
-  const boldText = (content) => new TextRun({ text: content || '', bold: true, font: "Arial", size: 18 });
+  // Helper to create a text run (always uppercase)
+  const text = (content, bold = false) => new TextRun({ text: upper(content), bold, font: "Arial", size: 18 }); // 9pt = 18 half-points
+
+  // Helper to create bold text (always uppercase)
+  const boldText = (content) => new TextRun({ text: upper(content), bold: true, font: "Arial", size: 18 });
 
   // Helper to create a simple cell
   const cell = (content, options = {}) => {
@@ -214,9 +219,15 @@ async function generateLeaseWord(leaseData) {
               new TableRow({
                 children: [
                   labelCell([boldText("1.1 THE LANDLORD:")]),
-                  valueCell([
-                    boldText(landlord.name || '')
-                  ]),
+                  new TableCell({
+                    children: [
+                      new Paragraph({ children: [boldText(landlord.name || '')] }),
+                      new Paragraph({ children: [boldText("0861 999 118")] }),
+                    ],
+                    borders,
+                    width: { size: 50, type: WidthType.PERCENTAGE },
+                    verticalAlign: VerticalAlign.TOP,
+                  }),
                 ],
               }),
               new TableRow({
@@ -228,7 +239,7 @@ async function generateLeaseWord(leaseData) {
               new TableRow({
                 children: [
                   labelCell("VAT REGISTRATION NO:"),
-                  valueCell(landlord.vatNo || ''),
+                  valueCell(landlord.vatNo || 'TBA'),
                 ],
               }),
               new TableRow({
@@ -263,7 +274,7 @@ async function generateLeaseWord(leaseData) {
               new TableRow({
                 children: [
                   labelCell("VAT REGISTRATION NO:"),
-                  valueCell(tenant.vatNo || ''),
+                  valueCell(tenant.vatNo || 'TBA'),
                 ],
               }),
             ],
@@ -521,11 +532,17 @@ async function generateLeaseWord(leaseData) {
             ],
           }),
           
-          // Footer page 1
+          // Page 1 footer: page number left, INITIAL HERE: right (using tab stops, no table borders)
           new Paragraph({
-            children: [new TextRun({ text: "1      INITIAL HERE: _______", bold: true, font: "Arial", size: 18 })],
-            alignment: AlignmentType.RIGHT,
-            spacing: { before: 400 },
+            spacing: { before: 300, after: 0 },
+            tabStops: [
+              { type: TabStopType.RIGHT, position: 9000 }
+            ],
+            children: [
+              new TextRun({ text: "1", font: "Calibri", size: 22, bold: false }),
+              new TextRun({ text: "\t", font: "Calibri", size: 22 }),
+              new TextRun({ text: "INITIAL HERE:", font: "Calibri", size: 22, bold: true }),
+            ],
           }),
           
           // Page break
@@ -651,7 +668,7 @@ async function generateLeaseWord(leaseData) {
               new TableRow({
                 children: [
                   labelCell([boldText("1.13 DEPOSIT -")]),
-                  valueCell([boldText(`${formatMoney(financial.deposit)} – ${financial.depositType === 'payable' ? 'DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.' : 'DEPOSIT HELD.'}`)]),
+                  valueCell([boldText(financial.deposit ? `${formatMoney(financial.deposit)} – ${financial.depositType === 'payable' ? 'DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.' : 'DEPOSIT HELD.'}` : 'N/A')]),
                 ],
               }),
               new TableRow({
@@ -738,11 +755,17 @@ async function generateLeaseWord(leaseData) {
             ],
           }),
           
-          // Footer page 2
+          // Page 2 footer: page number left, INITIAL HERE: right (using tab stops, no table borders)
           new Paragraph({
-            children: [new TextRun({ text: "2      INITIAL HERE: _______", bold: true, font: "Arial", size: 18 })],
-            alignment: AlignmentType.RIGHT,
-            spacing: { before: 400 },
+            spacing: { before: 600, after: 0 },
+            tabStops: [
+              { type: TabStopType.RIGHT, position: 9000 }
+            ],
+            children: [
+              new TextRun({ text: "2", font: "Calibri", size: 22, bold: false }),
+              new TextRun({ text: "\t", font: "Calibri", size: 22 }),
+              new TextRun({ text: "INITIAL HERE:", font: "Calibri", size: 22, bold: true }),
+            ],
           }),
         ],
       },

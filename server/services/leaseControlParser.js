@@ -173,7 +173,7 @@ function cleanCompanyName(name) {
 }
 
 /**
- * Extract landlord/owner data
+ * Extract landlord/owner data - DYNAMIC extraction for any landlord
  */
 function extractLandlordData(text) {
   const landlord = {
@@ -189,22 +189,31 @@ function extractLandlordData(text) {
   
   console.log('🔍 Extracting landlord data...');
   
-  // Look for Reflect-All pattern (common landlord)
-  const reflectMatch = text.match(/Reflect[\-\s]?All\s*\d*\s*\(Pty\)\s*Ltd/i);
-  if (reflectMatch) {
-    landlord.name = reflectMatch[0].trim();
-    console.log('🏠 Landlord name (Reflect):', landlord.name);
+  // DYNAMIC: Look for company name after "Owner / Lessor" - works for ANY landlord
+  const ownerPatterns = [
+    /Owner\s*\/\s*Lessor\s+([A-Za-z][\w\s\-\.&']+?\s*\(Pty\)\s*Ltd)/i,
+    /Owner\s*\/\s*Lessor\s+([A-Za-z][\w\s\-\.&']+?)\s+Represented/i,
+    /Lessor\s*[:\s]+([A-Za-z][\w\s\-\.&']+?\s*\(Pty\)\s*Ltd)/i,
+    /Landlord\s*[:\s]+([A-Za-z][\w\s\-\.&']+?\s*\(Pty\)\s*Ltd)/i
+  ];
+  
+  for (const pattern of ownerPatterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      landlord.name = match[1].trim();
+      console.log('🏠 Landlord name (dynamic):', landlord.name);
+      break;
+    }
   }
   
-  // If not found, look near Owner / Lessor
+  // Fallback: Look in Owner/Lessor section for any (Pty) Ltd company
   if (!landlord.name) {
-    // Find text after "Owner / Lessor" that contains (Pty) Ltd
-    const ownerSection = text.match(/Owner\s*\/\s*Lessor[\s\S]{0,500}/i);
+    const ownerSection = text.match(/Owner\s*\/\s*Lessor[\s\S]{0,300}/i);
     if (ownerSection) {
       const companyMatch = ownerSection[0].match(/([A-Za-z][\w\s\-\.&']+?)\s*\(Pty\)\s*Ltd/i);
       if (companyMatch) {
         landlord.name = companyMatch[0].trim();
-        console.log('🏠 Landlord name (Owner section):', landlord.name);
+        console.log('🏠 Landlord name (section fallback):', landlord.name);
       }
     }
   }
@@ -212,16 +221,24 @@ function extractLandlordData(text) {
   // Extract registration number - look for format YYYY/NNNNNN/NN
   const regMatches = text.match(/\d{4}\/\d{5,}\/\d{2}/g) || [];
   if (regMatches.length > 0) {
-    // Take the one that appears near "Entity" or "Reference" or use the first one for landlord
     landlord.regNo = regMatches[0];
     console.log('📋 Landlord Reg No:', landlord.regNo);
   }
   
-  // Extract phone
-  const phoneMatch = text.match(/(?:Tel|Phone)[:\s]*(\d[\d\s\-]+\d)/i);
-  if (phoneMatch) {
-    landlord.phone = phoneMatch[1].replace(/\s+/g, ' ').trim();
-    console.log('📞 Phone:', landlord.phone);
+  // Extract phone - multiple patterns
+  const phonePatterns = [
+    /(?:Tel|Telephone|Phone)[:\s]*(\d[\d\s\-]+\d)/i,
+    /(\d{4}\s*\d{3}\s*\d{3})/,  // Format: 0861 999 118
+    /(\d{10,})/  // 10+ digit number
+  ];
+  
+  for (const pattern of phonePatterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      landlord.phone = match[1].replace(/\s+/g, ' ').trim();
+      console.log('📞 Phone:', landlord.phone);
+      break;
+    }
   }
   
   return landlord;
@@ -391,56 +408,177 @@ function extractSuretyData(text) {
   };
   
   console.log('🔍 Extracting surety data...');
+  console.log('📄 Full text length:', text.length);
   
-  // Look for pattern: Person Name + Director/Member
-  // The format is usually "Peter Allan MarksDirector" or "Name    Capacity"
-  // Also handle "Woodmead\nPeter Allan MarksDirector" - need to extract just the name part
+  // Log a sample of the text to see structure
+  console.log('📄 Text sample (first 500 chars):', text.substring(0, 500));
   
-  // First, find text near "Director" and extract the person name before it
-  const directorPatterns = [
-    // Pattern: "Peter Allan Marks Director" or "Peter Allan MarksDirector"
-    /([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*(Director|Member)/i,
-    // Pattern: Name immediately before Director (no space)
-    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?=Director)/,
-    // Authorised Representative pattern
-    /Authorised\s*Representative\s*\n?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i
+  // Search for "Represented By" anywhere in text first
+  const representedByGlobal = text.match(/Represented\s*By[:\s]*([^\n\r]+)/gi);
+  console.log('🔎 Global "Represented By" matches:', representedByGlobal);
+
+  // Try multiple patterns to find the SURETY section
+  let suretySection = '';
+  const sectionPatterns = [
+    /1\.11\s*SURETY[\s\S]{0,1000}/i,
+    /SURETY[\s\S]{0,1000}/i,
+    /1\.11[\s\S]{0,1000}/i,
+    /Represented\s*By[\s\S]{0,500}/i
   ];
   
-  for (const pattern of directorPatterns) {
+  for (const pattern of sectionPatterns) {
     const match = text.match(pattern);
     if (match) {
-      let name = match[1].trim();
-      // Clean up any location prefixes (e.g., "Woodmead\nPeter" -> "Peter")
-      name = name.replace(/^[A-Za-z]+\n/, '').trim();
-      // Only accept if it looks like a person name (2-4 words, all capitalized)
-      const words = name.split(/\s+/);
-      if (words.length >= 2 && words.length <= 4 && words.every(w => /^[A-Z][a-z]+$/.test(w))) {
-        surety.name = name;
-        surety.capacity = match[2] ? match[2].trim() : 'Director';
-        console.log('👤 Surety name:', surety.name);
-        console.log('💼 Capacity:', surety.capacity);
-        break;
+      suretySection = match[0];
+      console.log('📋 Found surety section with pattern:', pattern.toString().substring(0, 30));
+      console.log('📋 Section content:', suretySection.substring(0, 300));
+      break;
+    }
+  }
+  
+  if (!suretySection) {
+    console.log('⚠️ No surety section found');
+    // Use entire text as fallback
+    suretySection = text;
+    console.log('📋 Using full text as fallback');
+  }
+  
+  console.log('📋 Surety section preview:', suretySection.substring(0, 200));
+
+  // Helper to strip role words from the surety name
+  const cleanSuretyName = (name) => {
+    if (!name) return '';
+    return name
+      .replace(/Capacity/gi, '')
+      .replace(/Director/gi, '')
+      .replace(/Member/gi, '')
+      .replace(/Owner/gi, '')
+      .replace(/Authorised/gi, '')
+      .replace(/Representative/gi, '')
+      .replace(/Resolution/gi, '')
+      .replace(/Represented\s*By/gi, '')
+      .replace(/1\.11/g, '')
+      .replace(/SURETY/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  // FIRST: Look for full name pattern like "Earle Marks" near Director/Capacity
+  console.log('🔎 Looking for full name near Director/Capacity...');
+  
+  // Pattern 1: Name followed by Director or Capacity (e.g., "Earle MarksDirector" or "Earle Marks\nCapacity")
+  const nameDirectorMatch = text.match(/([A-Z][a-z]+\s+[A-Z][a-z]+)(?:\s*Director|\s*Capacity|\s*Member)/i);
+  if (nameDirectorMatch && nameDirectorMatch[1]) {
+    surety.name = nameDirectorMatch[1].trim();
+    console.log('👤 Surety name from Director/Capacity pattern:', surety.name);
+  }
+  
+  // Pattern 2: Look for "FirstName LastName" that appears multiple times (likely the representative)
+  if (!surety.name) {
+    const fullNameMatch = text.match(/([A-Z][a-z]+\s+[A-Z][a-z]+)(?=\s*Reflect|\s*General|\s*Director|\s*Capacity)/i);
+    if (fullNameMatch && fullNameMatch[1]) {
+      surety.name = fullNameMatch[1].trim();
+      console.log('👤 Surety name from context pattern:', surety.name);
+    }
+  }
+  
+  // Pattern 3: Line-by-line extraction from "Represented By" section as fallback
+  if (!surety.name) {
+    const representedBySection = text.match(/Represented\s*By[\s\S]{0,300}/i);
+    if (representedBySection) {
+      console.log('📋 Trying line-by-line from Represented By section');
+      const lines = representedBySection[0].split(/\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && 
+            trimmed.length > 4 && 
+            trimmed.length < 40 &&
+            !trimmed.match(/^(Represented|By|Capacity|Lease|Description|Director|Member|Owner|Resolution|Authorised|Township|Erf|Stand|Section|Amount|Rate|Office|Unit|Area|Market|Rentals|Further|Accommodation|Type|No|PQ)/i) &&
+            !trimmed.match(/[0-9@]/) &&
+            !trimmed.match(/,/) &&
+            trimmed.match(/^[A-Z][a-z]+(\s+[A-Z][a-z]+)+$/)) {
+          surety.name = trimmed;
+          console.log('👤 Surety name from line:', surety.name);
+          break;
+        }
       }
     }
   }
   
-  // Fallback: Look for Capacity field and extract name before it
+  // SECOND: Try regex patterns if line-by-line didn't work
   if (!surety.name) {
-    const capacityMatch = text.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*\n?\s*Capacity\s*\n?\s*(Director|Member|Owner)/i);
-    if (capacityMatch) {
-      surety.name = capacityMatch[1].trim();
-      surety.capacity = capacityMatch[2].trim();
-      console.log('👤 Surety name (Capacity pattern):', surety.name);
+    const namePatterns = [
+      /NAME\s*[:\-]?\s*([A-Za-z][A-Za-z\s]+)/i,
+      /NAME\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
+      /SURETY\s*NAME\s*[:\-]?\s*([^\n\r]+)/i
+    ];
+    
+    for (const pattern of namePatterns) {
+      const match = suretySection.match(pattern);
+      if (match && match[1]) {
+        const name = cleanSuretyName(match[1]);
+        if (name && name.length > 2) {
+          surety.name = name;
+          console.log('👤 Surety name found from pattern:', surety.name);
+          break;
+        }
+      }
     }
   }
+
+  // Try multiple patterns for ID NUMBER extraction
+  const idPatterns = [
+    /ID\s*NUMBER\s*[:\-]?\s*([0-9]{6,13})/i,
+    /ID\s*NO\s*[:\-]?\s*([0-9]{6,13})/i,
+    /ID\s*[:\-]?\s*([0-9]{10,13})/i
+  ];
   
-  // Look for ID number
-  const idMatch = text.match(/(?:ID|Identity)\s*(?:No|Number)?[:\s]*(\d{13})/i);
-  if (idMatch) {
-    surety.idNumber = idMatch[1];
-    console.log('🆔 ID Number:', surety.idNumber);
+  for (const pattern of idPatterns) {
+    const match = suretySection.match(pattern);
+    if (match && match[1]) {
+      surety.idNumber = match[1];
+      console.log('🆔 ID Number found:', surety.idNumber);
+      break;
+    }
   }
+
+  // Try multiple patterns for ADDRESS extraction
+  const addressPatterns = [
+    /ADDRESS\s*[:\-]?\s*([^\n\r]+)/i,
+    /SURETY\s*ADDRESS\s*[:\-]?\s*([^\n\r]+)/i
+  ];
   
+  for (const pattern of addressPatterns) {
+    const match = suretySection.match(pattern);
+    if (match && match[1]) {
+      const addr = match[1].replace(/\s+/g, ' ').trim();
+      if (addr && addr.length > 5) {
+        surety.address = addr;
+        console.log('🏠 Surety Address found:', surety.address);
+        break;
+      }
+    }
+  }
+
+  // Fallback: Look for pattern with Director/Member
+  if (!surety.name) {
+    const directorPatterns = [
+      /([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*(Director|Member)/i,
+      /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*Capacity\s*(Director|Member|Owner)/i
+    ];
+    
+    for (const pattern of directorPatterns) {
+      const match = suretySection.match(pattern);
+      if (match && match[1]) {
+        surety.name = cleanSuretyName(match[1]);
+        surety.capacity = match[2] ? match[2].trim() : 'Director';
+        console.log('👤 Surety name (fallback):', surety.name);
+        break;
+      }
+    }
+  }
+
+  console.log('✅ Final surety data:', JSON.stringify(surety));
   return surety;
 }
 
@@ -758,11 +896,18 @@ function extractFinancialData(text) {
     });
   }
   
-  // Extract deposit
+  // Extract deposit (only set if found AND greater than 0)
   const depositMatch = text.match(/Cash\s*Amount\s*Required\s*([\d,]+\.?\d*)/i);
-  if (depositMatch && parseFloat(depositMatch[1].replace(/,/g, '')) > 0) {
-    financial.deposit = depositMatch[1].replace(/,/g, '');
-    console.log('💰 Deposit:', financial.deposit);
+  if (depositMatch) {
+    const depositValue = parseFloat(depositMatch[1].replace(/,/g, ''));
+    if (depositValue > 0) {
+      financial.deposit = depositMatch[1].replace(/,/g, '');
+      console.log('💰 Deposit:', financial.deposit);
+    } else {
+      console.log('💰 Deposit found but is 0 or invalid - keeping empty');
+    }
+  } else {
+    console.log('💰 Deposit not found in PDF - keeping empty');
   }
   
   // Extract lease fee
@@ -771,6 +916,12 @@ function extractFinancialData(text) {
     financial.leaseFee = feeMatch[1].replace(/,/g, '');
     console.log('💰 Lease Fee:', financial.leaseFee);
   }
+  
+  // Final check: Log what we're returning for each year
+  console.log('📊 FINAL FINANCIAL DATA BEING RETURNED:');
+  console.log('Year 1 basicRent:', financial.year1.basicRent);
+  console.log('Year 2 basicRent:', financial.year2.basicRent);
+  console.log('Year 3 basicRent:', financial.year3.basicRent);
   
   return financial;
 }

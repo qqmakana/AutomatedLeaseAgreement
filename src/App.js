@@ -99,6 +99,9 @@ const LeaseDraftingSystem = () => {
     branchCode: ''
   };
 
+// Always reset any saved surety defaults to avoid stale personal data
+localStorage.removeItem('defaultSurety');
+
   const [extractedData, setExtractedData] = useState({
     landlord: initialLandlord,
     tenant: {
@@ -118,7 +121,8 @@ const LeaseDraftingSystem = () => {
     surety: {
       name: '',
       idNumber: '',
-      address: ''
+      address: '',
+      capacity: ''
     },
     premises: {
       unit: '',
@@ -229,10 +233,7 @@ const LeaseDraftingSystem = () => {
   const [invoiceApplied, setInvoiceApplied] = useState(false);
   const [invoiceExtractOptions, setInvoiceExtractOptions] = useState({
     landlord: true,
-    deposit: true,
-    electricity: false,
-    water: false,
-    sewerage: false
+    deposit: true
   });
   
   // Refs for file inputs (to reset them after form clear)
@@ -319,7 +320,7 @@ const LeaseDraftingSystem = () => {
     const savedDrafts = localStorage.getItem('leaseDrafts');
     const savedHistory = localStorage.getItem('leaseHistory');
     const savedDefaultLandlord = localStorage.getItem('defaultLandlord');
-    const savedDefaultSurety = localStorage.getItem('defaultSurety');
+    const savedDefaultSurety = null; // force no default surety
     const savedAuditTrail = localStorage.getItem('auditTrail');
     const savedVerification = localStorage.getItem('verificationStatus');
     
@@ -589,9 +590,26 @@ const LeaseDraftingSystem = () => {
     }
   };
 
+  const isLikelyInvoiceFile = (fileName = '') => {
+    const name = fileName.toLowerCase();
+    return name.includes('invoice');
+  };
+  
+  const isLikelyLeaseControlFile = (fileName = '') => {
+    const name = fileName.toLowerCase();
+    return name.includes('lease') || name.includes('control');
+  };
+
   // Handle Lease Control Schedule PDF upload
   const handleLeaseControlUpload = async (file) => {
     if (!file) return;
+    
+    // Prevent uploading invoice into lease control
+    if (isLikelyInvoiceFile(file.name)) {
+      setLeaseControlError('This looks like an invoice. Please upload it in the Invoice section.');
+      toast.warn('This looks like an invoice. Use the Invoice upload instead.');
+      return;
+    }
     
     // Validate file type
     if (file.type !== 'application/pdf') {
@@ -599,6 +617,12 @@ const LeaseDraftingSystem = () => {
       return;
     }
     
+    // Clear surety before parsing to avoid stale values
+    setExtractedData(prev => ({
+      ...prev,
+      surety: { name: '', idNumber: '', address: '', capacity: '' }
+    }));
+
     setLeaseControlFile(file);
     setLeaseControlError(null);
     setLeaseControlSuccess(false);
@@ -613,12 +637,23 @@ const LeaseDraftingSystem = () => {
       if (result.success && result.data) {
         const data = result.data;
         
+        // Debug: Log financial data
+        console.log('📊 Received financial data from parser:');
+        console.log('Year 1:', data.financial?.year1);
+        console.log('Year 2:', data.financial?.year2);
+        console.log('Year 3:', data.financial?.year3);
+        
         // Update extractedData with parsed values
         setExtractedData(prev => ({
           landlord: {
             ...prev.landlord,
             name: data.landlord?.name || prev.landlord.name,
-            phone: data.landlord?.phone || prev.landlord.phone,
+            regNo: data.landlord?.regNo || prev.landlord.regNo,
+            vatNo: data.landlord?.vatNo || prev.landlord.vatNo,
+            bank: data.landlord?.bank || prev.landlord.bank,
+            branch: data.landlord?.branch || prev.landlord.branch,
+            accountNo: data.landlord?.accountNo || prev.landlord.accountNo,
+            branchCode: data.landlord?.branchCode || prev.landlord.branchCode,
           },
           tenant: {
             ...prev.tenant,
@@ -632,9 +667,9 @@ const LeaseDraftingSystem = () => {
             email: data.tenant?.email || prev.tenant.email,
           },
           surety: {
-            ...prev.surety,
-            name: data.surety?.name || prev.surety.name,
-            address: data.surety?.address || prev.surety.address,
+            name: data.surety?.name || '',
+            idNumber: data.surety?.idNumber || '',
+            address: data.surety?.address || '',
             capacity: data.surety?.capacity || '',
           },
           premises: {
@@ -692,11 +727,14 @@ const LeaseDraftingSystem = () => {
               from: data.financial?.year5?.from || prev.financial.year5.from,
               to: data.financial?.year5?.to || prev.financial.year5.to,
             },
-            deposit: data.financial?.deposit || prev.financial.deposit,
+            deposit: (data.financial?.deposit && parseFloat(data.financial.deposit) > 0) ? data.financial.deposit : prev.financial.deposit,
             leaseFee: data.financial?.leaseFee || prev.financial.leaseFee,
             escalationRate: data.financial?.escalationRate || prev.financial.escalationRate || '6',
           }
         }));
+        
+        // Debug: Log what was set (will show on next render)
+        console.log('✅ State updated. Check Year 1 inputs now.');
         
         setLeaseControlSuccess(true);
         toast.success('✅ Lease Control Schedule parsed successfully! Form has been auto-populated.');
@@ -733,6 +771,13 @@ const LeaseDraftingSystem = () => {
   const handleInvoiceUpload = async (file) => {
     if (!file) return;
     
+    // Prevent uploading lease control into invoice
+    if (isLikelyLeaseControlFile(file.name)) {
+      setInvoiceError('This looks like a lease control schedule. Please upload it in the Lease Control section.');
+      toast.warn('This looks like a lease control. Use the Lease Control upload instead.');
+      return;
+    }
+    
     // Validate file type - PDF only for our parser
     if (file.type !== 'application/pdf') {
       setInvoiceError('Please upload a PDF file');
@@ -765,8 +810,7 @@ const LeaseDraftingSystem = () => {
         addAuditEntry('Invoice Parsed', {
           fileName: file.name,
           landlord: data.landlord?.name || 'N/A',
-          deposit: data.deposit || 'N/A',
-          hasUtilities: !!(data.utilities?.electricity || data.utilities?.water)
+          deposit: data.deposit || 'N/A'
         });
       } else {
         throw new Error('No data extracted from invoice');
@@ -787,7 +831,7 @@ const LeaseDraftingSystem = () => {
     setExtractedData(prev => {
       const updated = { ...prev };
       
-      // Apply landlord details if selected and available
+      // Apply landlord details from invoice (Entity) - use invoice for name/reg/vat + banking
       if (invoiceExtractOptions.landlord && invoiceData.landlord) {
         const landlordData = invoiceData.landlord;
         updated.landlord = {
@@ -795,7 +839,6 @@ const LeaseDraftingSystem = () => {
           name: landlordData.name || updated.landlord?.name || '',
           regNo: landlordData.regNo || updated.landlord?.regNo || '',
           vatNo: landlordData.vatNo || updated.landlord?.vatNo || '',
-          phone: landlordData.phone || updated.landlord?.phone || '',
           bank: landlordData.bank || updated.landlord?.bank || '',
           branch: landlordData.branch || updated.landlord?.branch || '',
           accountNo: landlordData.accountNo || updated.landlord?.accountNo || '',
@@ -803,81 +846,8 @@ const LeaseDraftingSystem = () => {
         };
       }
       
-      // Apply deposit if selected and available
-      if (invoiceExtractOptions.deposit && invoiceData.deposit) {
-        updated.financial = {
-          ...updated.financial,
-          deposit: invoiceData.deposit
-        };
-      }
-      
-      // Apply utilities if selected
-      if (invoiceExtractOptions.electricity && invoiceData.utilities?.electricity) {
-        // Add to Year 1 sewerage/water field or create separate
-        updated.financial = {
-          ...updated.financial,
-          year1: {
-            ...updated.financial.year1,
-            sewerageWater: invoiceData.utilities.electricity
-          }
-        };
-      }
-      
-      if (invoiceExtractOptions.water && invoiceData.utilities?.water) {
-        // Combine water with sewerage if both selected
-        const currentSewerage = parseFloat(updated.financial?.year1?.sewerageWater || 0);
-        const water = parseFloat(invoiceData.utilities.water || 0);
-        updated.financial = {
-          ...updated.financial,
-          year1: {
-            ...updated.financial.year1,
-            sewerageWater: (currentSewerage + water).toFixed(2)
-          }
-        };
-      }
-      
-      if (invoiceExtractOptions.sewerage && invoiceData.utilities?.sewerage) {
-        const currentSewerage = parseFloat(updated.financial?.year1?.sewerageWater || 0);
-        const sewerage = parseFloat(invoiceData.utilities.sewerage || 0);
-        updated.financial = {
-          ...updated.financial,
-          year1: {
-            ...updated.financial.year1,
-            sewerageWater: (currentSewerage + sewerage).toFixed(2)
-          }
-        };
-      }
-      
-      // Apply tenant bank details if available
-      if (invoiceData.tenantBank?.accountNumber) {
-        updated.tenant = {
-          ...updated.tenant,
-          bankName: invoiceData.tenantBank.bankName || updated.tenant.bankName,
-          bankAccountNo: invoiceData.tenantBank.accountNumber || updated.tenant.bankAccountNo,
-          bankBranchCode: invoiceData.tenantBank.branchCode || updated.tenant.bankBranchCode,
-          bankAccountHolder: invoiceData.tenantBank.accountName || updated.tenant.bankAccountHolder
-        };
-      }
-      
-      // Apply tenant details (name, regNo, vatNo) from invoice if available
-      if (invoiceData.tenant) {
-        updated.tenant = {
-          ...updated.tenant,
-          name: invoiceData.tenant.name || updated.tenant.name,
-          regNo: invoiceData.tenant.regNo || updated.tenant.regNo,
-          vatNo: invoiceData.tenant.vatNo || updated.tenant.vatNo
-        };
-      }
-      
-      // Apply premises/building info from invoice if available
-      if (invoiceData.premises) {
-        updated.premises = {
-          ...updated.premises,
-          buildingName: invoiceData.premises.buildingName || updated.premises.buildingName,
-          buildingAddress: invoiceData.premises.buildingAddress || updated.premises.buildingAddress,
-          unit: invoiceData.premises.unit || updated.premises.unit
-        };
-      }
+      // Invoice ONLY extracts landlord bank details - NO tenant data
+      // Tenant data comes ONLY from Lease Control Schedule
       
       return updated;
     });
@@ -938,9 +908,8 @@ const LeaseDraftingSystem = () => {
       suretyID: []
     });
     
-    // Reset extractedData to initial state (but keep default landlord and surety if set)
+    // Reset extractedData to initial state (keep default landlord if set, but never persist surety)
     const savedDefaultLandlord = localStorage.getItem('defaultLandlord');
-    const savedDefaultSurety = localStorage.getItem('defaultSurety');
     const defaultLandlord = savedDefaultLandlord ? JSON.parse(savedDefaultLandlord) : {
       name: '',
       regNo: '',
@@ -951,11 +920,8 @@ const LeaseDraftingSystem = () => {
       accountNo: '',
       branchCode: ''
     };
-    const defaultSurety = savedDefaultSurety ? JSON.parse(savedDefaultSurety) : {
-      name: '',
-      idNumber: '',
-      address: ''
-    };
+    localStorage.removeItem('defaultSurety');
+    const defaultSurety = { name: '', idNumber: '', address: '', capacity: '' };
     
     setExtractedData({
       landlord: defaultLandlord,
@@ -1071,6 +1037,64 @@ const LeaseDraftingSystem = () => {
           }
         }
       };
+
+      // Auto-calc lease dates: if Year 1 FROM set, then Year 1 TO = 31/12 same year, Year 2-5 FROM/TO = full years thereafter
+      // Example: FROM 01/01/2026 → TO 31/12/2026, Year 2: 01/01/2027 - 31/12/2027, etc.
+      if (year === 'year1' && field === 'from' && value) {
+        const fromDate = new Date(value);
+        if (!isNaN(fromDate.getTime())) {
+          const startYear = fromDate.getFullYear();
+          const startMonth = fromDate.getMonth();
+          const startDay = fromDate.getDate();
+          
+          // Format as YYYY-MM-DD for input[type="date"]
+          const formatISO = (y, m, d) => {
+            return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          };
+          
+          // Calculate end date: one year later minus one day
+          // If start is 01/01/2026, end is 31/12/2026
+          const getEndDate = (yearOffset) => {
+            const endDate = new Date(startYear + yearOffset + 1, startMonth, startDay);
+            endDate.setDate(endDate.getDate() - 1);
+            return formatISO(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+          };
+          
+          // Calculate start date for subsequent years
+          const getStartDate = (yearOffset) => {
+            return formatISO(startYear + yearOffset, startMonth, startDay);
+          };
+          
+          updated.financial = {
+            ...updated.financial,
+            year1: {
+              ...updated.financial.year1,
+              from: value,
+              to: getEndDate(0)
+            },
+            year2: {
+              ...updated.financial.year2,
+              from: getStartDate(1),
+              to: getEndDate(1)
+            },
+            year3: {
+              ...updated.financial.year3,
+              from: getStartDate(2),
+              to: getEndDate(2)
+            },
+            year4: {
+              ...updated.financial.year4,
+              from: getStartDate(3),
+              to: getEndDate(3)
+            },
+            year5: {
+              ...updated.financial.year5,
+              from: getStartDate(4),
+              to: getEndDate(4)
+            }
+          };
+        }
+      }
 
       // Auto-calculate ALL years (2-5) basic rent if Year 1 changes
       if (year === 'year1' && field === 'basicRent') {
@@ -1544,7 +1568,7 @@ ID NUMBER: ${surety.idNumber || ''}
 
 ADDRESS: ${surety.address || ''}
 
-1 INITIAL HERE: _________
+1 INITIAL HERE
 
 1.12 MONTHLY RENTAL AND OTHER MONTHLY CHARGES:
 
@@ -1552,7 +1576,7 @@ ${useHTML ? generateMonthlyRentalTableHTML() : generateMonthlyRentalTableText()}
 
 *INCREASES AS PER RELEVANT MUNICIPAL AUTHORITY/CONTRACTOR IN RATES AND REFUSE TO APPLY ON A PROPORTIONATE BASIS.
 
-1.13 DEPOSIT: ${formatCurrency(financial.deposit) || '[AMOUNT]'} – DEPOSIT HELD.
+1.13 DEPOSIT: ${financial.deposit && parseFloat(financial.deposit) > 0 ? `${formatCurrency(financial.deposit)} – ${financial.depositType === 'payable' ? 'DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.' : 'DEPOSIT HELD.'}` : 'N/A'}
 
 1.14.1 TURNOVER PERCENTAGE: ${financial.turnoverPercentage || 'N/A'}
 
@@ -1568,7 +1592,7 @@ ${financial.advertisingContribution || 'N/A'}
 
 1.17 THE FOLLOWING ANNEXURES SHALL FORM PART OF THIS AGREEMENT OF LEASE: "A"; "B"; "C"; "D"
 
-2 INITIAL HERE: _________
+2 INITIAL HERE
 
 ---
 
@@ -2142,7 +2166,7 @@ Generated by Automated Lease Drafting System
     checkPageBreak();
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('1 INITIAL HERE: _________', pageWidth - margin, yPosition, { align: 'right' });
+    doc.text('1 INITIAL HERE', pageWidth - margin, yPosition, { align: 'right' });
     yPosition += SPACING.field;
     
     // 1.12 MONTHLY RENTAL TABLE
@@ -2153,7 +2177,7 @@ Generated by Automated Lease Drafting System
     doc.text('1.12 MONTHLY RENTAL AND OTHER MONTHLY CHARGES:', margin, yPosition);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('1 INITIAL HERE: _________', pageWidth - margin, yPosition, { align: 'right' });
+    doc.text('1 INITIAL HERE', pageWidth - margin, yPosition, { align: 'right' });
     yPosition += SPACING.sectionTitle + SPACING.table;
     
     const tableMargin = margin;
@@ -2254,7 +2278,7 @@ Generated by Automated Lease Drafting System
     // Remaining sections
     yPosition += SPACING.section;
     renderSectionTitle('1.13 DEPOSIT:');
-    renderValue(`${formatCurrency(financial.deposit)} – DEPOSIT HELD.`);
+    renderValue(financial.deposit && parseFloat(financial.deposit) > 0 ? `${formatCurrency(financial.deposit)} – ${financial.depositType === 'payable' ? 'DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.' : 'DEPOSIT HELD.'}` : 'N/A');
     
     yPosition += SPACING.field;
     doc.setFont('helvetica', 'bold');
@@ -2303,7 +2327,7 @@ Generated by Automated Lease Drafting System
     checkPageBreak();
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('2 INITIAL HERE: _________', pageWidth - margin, yPosition, { align: 'right' });
+    doc.text('2 INITIAL HERE', pageWidth - margin, yPosition, { align: 'right' });
       
       // Save PDF
       doc.save(`Lease_Agreement_${extractedData.tenant.name || 'Draft'}_${new Date().toISOString().split('T')[0]}.pdf`);
@@ -2574,7 +2598,7 @@ Generated by Automated Lease Drafting System
         managementCompany: {
           name: extractedData.landlord.name || 'BENAV PROPERTIES (PTY) LTD',
           regNo: extractedData.landlord.regNo || '2018/060720/07',
-          vatNo: extractedData.landlord.vatNo || '4200288134',
+          vatNo: extractedData.landlord.vatNo || 'TBA',
           phone: extractedData.landlord.phone || '0861 999 118',
           address: '22 Stirrup Lane\nWoodmead Office Park\nWoodmead'
         },
@@ -3615,14 +3639,14 @@ Generated by Automated Lease Drafting System
               )}
             </div>
 
-            {/* OPTIONAL: Invoice Upload for Additional Data */}
+            {/* Invoice Upload for Additional Data */}
             <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 rounded-xl shadow-lg p-5 border-2 border-amber-200">
               <div className="flex items-center gap-3 mb-3">
                 <div className="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl shadow-lg flex items-center justify-center w-10 h-10">
                   <span className="text-white font-bold text-xl">R</span>
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Optional: Upload Invoice</h2>
+                  <h2 className="text-lg font-bold text-gray-900">Upload Invoice</h2>
                   <p className="text-xs text-gray-600">Extract deposit & utility data not in Lease Control</p>
                 </div>
               </div>
@@ -3715,84 +3739,6 @@ Generated by Automated Lease Drafting System
                     </label>
                   </div>
                   
-                  {/* Deposit Option */}
-                  <div className="flex items-center gap-3 mb-2 p-2 bg-gray-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="extractDeposit"
-                      checked={invoiceExtractOptions.deposit}
-                      onChange={(e) => setInvoiceExtractOptions(prev => ({ ...prev, deposit: e.target.checked }))}
-                      className="w-4 h-4 text-amber-600 rounded"
-                    />
-                    <label htmlFor="extractDeposit" className="flex-1 text-sm">
-                      <span className="font-medium">Deposit</span>
-                      {invoiceData.deposit ? (
-                        <span className="ml-2 text-green-600">R {invoiceData.deposit}</span>
-                      ) : (
-                        <span className="ml-2 text-gray-400">Not found</span>
-                      )}
-                    </label>
-                  </div>
-                  
-                  {/* Utilities Header */}
-                  <p className="text-xs font-semibold text-gray-600 mt-3 mb-2">⚡ Utilities (optional):</p>
-                  
-                  {/* Electricity Option */}
-                  <div className="flex items-center gap-3 mb-2 p-2 bg-yellow-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="extractElectricity"
-                      checked={invoiceExtractOptions.electricity}
-                      onChange={(e) => setInvoiceExtractOptions(prev => ({ ...prev, electricity: e.target.checked }))}
-                      className="w-4 h-4 text-yellow-600 rounded"
-                    />
-                    <label htmlFor="extractElectricity" className="flex-1 text-sm">
-                      <span className="font-medium">Electricity</span>
-                      {invoiceData.utilities?.electricity ? (
-                        <span className="ml-2 text-green-600">R {invoiceData.utilities.electricity}</span>
-                      ) : (
-                        <span className="ml-2 text-gray-400">Not found</span>
-                      )}
-                    </label>
-                  </div>
-                  
-                  {/* Water Option */}
-                  <div className="flex items-center gap-3 mb-2 p-2 bg-blue-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="extractWater"
-                      checked={invoiceExtractOptions.water}
-                      onChange={(e) => setInvoiceExtractOptions(prev => ({ ...prev, water: e.target.checked }))}
-                      className="w-4 h-4 text-blue-600 rounded"
-                    />
-                    <label htmlFor="extractWater" className="flex-1 text-sm">
-                      <span className="font-medium">Water</span>
-                      {invoiceData.utilities?.water ? (
-                        <span className="ml-2 text-green-600">R {invoiceData.utilities.water}</span>
-                      ) : (
-                        <span className="ml-2 text-gray-400">Not found</span>
-                      )}
-                    </label>
-                  </div>
-                  
-                  {/* Sewerage Option */}
-                  <div className="flex items-center gap-3 mb-3 p-2 bg-purple-50 rounded-lg">
-                    <input
-                      type="checkbox"
-                      id="extractSewerage"
-                      checked={invoiceExtractOptions.sewerage}
-                      onChange={(e) => setInvoiceExtractOptions(prev => ({ ...prev, sewerage: e.target.checked }))}
-                      className="w-4 h-4 text-purple-600 rounded"
-                    />
-                    <label htmlFor="extractSewerage" className="flex-1 text-sm">
-                      <span className="font-medium">Sewerage</span>
-                      {invoiceData.utilities?.sewerage ? (
-                        <span className="ml-2 text-green-600">R {invoiceData.utilities.sewerage}</span>
-                      ) : (
-                        <span className="ml-2 text-gray-400">Not found</span>
-                      )}
-                    </label>
-                  </div>
                   
                   {/* Apply Button */}
                   <button
@@ -4177,13 +4123,6 @@ Generated by Automated Lease Drafting System
                 />
                 <input
                   type="text"
-                  placeholder="Phone Number"
-                  value={extractedData.landlord.phone}
-                  onChange={(e) => updateField('landlord', 'phone', e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                />
-                <input
-                  type="text"
                   placeholder="Registration Number"
                   value={extractedData.landlord.regNo}
                   onChange={(e) => updateField('landlord', 'regNo', e.target.value)}
@@ -4191,9 +4130,9 @@ Generated by Automated Lease Drafting System
                 />
                 <input
                   type="text"
-                  placeholder="VAT Number"
-                  value={extractedData.landlord.vatNo}
-                  onChange={(e) => updateField('landlord', 'vatNo', e.target.value)}
+                  placeholder="VAT Number (or TBA)"
+                  value={extractedData.landlord.vatNo || 'TBA'}
+                  onChange={(e) => updateField('landlord', 'vatNo', e.target.value === 'TBA' ? '' : e.target.value)}
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
                 <input
@@ -4440,37 +4379,6 @@ Generated by Automated Lease Drafting System
                 <User className="text-blue-600" size={24} />
                 1.11 SURETY
               </h2>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={hasDefaultSurety}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        // Check if surety data exists
-                        const suretyName = extractedData?.surety?.name;
-                        if (!suretyName || suretyName.trim() === '') {
-                          toast.warning('Please fill in surety information first before setting as default.');
-                          e.target.checked = false;
-                          return;
-                        }
-                        // Save as default
-                        localStorage.setItem('defaultSurety', JSON.stringify(extractedData.surety));
-                        setHasDefaultSurety(true);
-                        toast.success('Default surety saved!');
-                      } else {
-                        // Remove default
-                        localStorage.removeItem('defaultSurety');
-                        setHasDefaultSurety(false);
-                        toast.success('Default surety removed');
-                      }
-                    }}
-                    className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                  />
-                  <span className="text-sm font-medium text-gray-700 flex items-center gap-1">
-                    <Star size={16} fill={hasDefaultSurety ? 'currentColor' : 'none'} className={hasDefaultSurety ? 'text-yellow-500' : 'text-gray-400'} />
-                    Save as Default
-                  </span>
-                </label>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -4554,142 +4462,149 @@ Generated by Automated Lease Drafting System
                 </p>
               </div>
               
-              <div className="mb-6 p-5 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl shadow-sm border border-blue-200">
-                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <span className="text-2xl">📅</span>
-                  <span>Year 1</span>
+              <div className="mb-6 p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl shadow-sm border border-blue-200">
+                <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                  <span className="text-xl">📅</span>
+                  <span className="text-base">Year 1</span>
                 </h3>
                 
-                {/* Single Row - 7 Columns to match PDF exactly */}
-                <div className="grid grid-cols-7 gap-3">
+                {/* Compact 7 Column Grid */}
+                <div className="grid gap-2" style={{gridTemplateColumns: '1fr 1fr 1fr 1.3fr 1fr 1fr 1fr', alignItems: 'end'}}>
                   {/* Column 1: BASIC RENT EXCL. VAT */}
-                  <div className="border-r-2 border-blue-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>EXCL. VAT</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-700 text-center mb-2 leading-tight uppercase min-h-[32px] flex items-center justify-center">
+                      BASIC RENT<br/>EXCL. VAT
+                    </div>
+                    <div className="relative h-9">
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-600 font-semibold text-[11px] pointer-events-none z-10">R</span>
                       <input
                         type="text"
-                        placeholder="e.g. 22730.00"
-                        value={extractedData.financial.year1.basicRent}
+                        placeholder="22730.00"
+                        value={extractedData.financial.year1.basicRent || ''}
                         onChange={(e) => updateFinancialField('year1', 'basicRent', e.target.value)}
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
+                        className="w-full h-9 pl-4 pr-1.5 text-sm font-semibold text-gray-900 bg-white border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                   </div>
                   
                   {/* Column 2: BASIC RENT INCL. VAT */}
-                  <div className="border-r-2 border-blue-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>INCL. VAT</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-700 text-center mb-2 leading-tight uppercase min-h-[32px] flex items-center justify-center">
+                      BASIC RENT<br/>INCL. VAT
+                    </div>
+                    <div className="relative h-9">
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-600 font-semibold text-[11px] pointer-events-none z-10">R</span>
                       <input
                         type="text"
                         value={extractedData.financial.year1.basicRent ? (parseFloat(extractedData.financial.year1.basicRent) * 1.15).toFixed(2) : ''}
                         readOnly
-                        placeholder="Auto"
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
+                        className="w-full h-9 pl-4 pr-1.5 text-sm font-semibold text-gray-700 bg-gray-50 border-2 border-gray-300 rounded"
                       />
                     </div>
                   </div>
                   
                   {/* Column 3: SECURITY EXCL. VAT */}
-                  <div className="border-r-2 border-blue-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">SECURITY<br/>EXCL. VAT</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-700 text-center mb-2 leading-tight uppercase min-h-[32px] flex items-center justify-center">
+                      SECURITY<br/>EXCL. VAT
+                    </div>
+                    <div className="relative h-9">
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-600 font-semibold text-[11px] pointer-events-none z-10">R</span>
                       <input
                         type="text"
-                        placeholder="e.g. 1033.18"
-                        value={extractedData.financial.year1.security}
+                        placeholder="1033.18"
+                        value={extractedData.financial.year1.security || ''}
                         onChange={(e) => updateFinancialField('year1', 'security', e.target.value)}
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
+                        className="w-full h-9 pl-4 pr-1.5 text-sm font-semibold text-gray-900 bg-white border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                   </div>
                   
                   {/* Column 4: ELECTRICITY SEWERAGE & WATER + *REFUSE AS AT (COMBINED) - HIGHLIGHTED */}
-                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-2.5 rounded-lg border-2 border-amber-200 shadow-md">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center leading-tight uppercase tracking-wide">
+                  <div className="bg-amber-50 p-2 rounded-lg border border-amber-200" style={{alignSelf: 'stretch'}}>
+                    <div className="text-[9px] font-bold text-gray-700 text-center mb-1 leading-tight uppercase">
                       ELECTRICITY<br/>SEWERAGE & WATER<br/>
-                      <span className="text-[11px] text-orange-700 font-semibold">*REFUSE AS AT</span><br/>
-                      <input
-                        type="date"
-                        value={extractedData.financial.ratesEffectiveDate}
-                        onChange={(e) => setExtractedData(prev => ({
-                          ...prev,
-                          financial: { ...prev.financial, ratesEffectiveDate: e.target.value }
-                        }))}
-                        className="w-full px-2 py-1 text-[11px] border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 mt-1 bg-white shadow-sm"
-                      />
-                      <span className="text-[11px] text-orange-700 font-semibold">EXCL. VAT</span>
-                    </label>
-                    <div className="space-y-1.5">
+                      <span className="text-orange-700">*REFUSE AS AT</span>
+                    </div>
+                    <input
+                      type="date"
+                      value={extractedData.financial.ratesEffectiveDate || ''}
+                      onChange={(e) => setExtractedData(prev => ({
+                        ...prev,
+                        financial: { ...prev.financial, ratesEffectiveDate: e.target.value }
+                      }))}
+                      className="w-full px-1 py-0.5 text-[9px] border border-amber-300 rounded mb-1 bg-white"
+                    />
+                    <div className="text-[9px] font-bold text-orange-700 text-center mb-1">EXCL. VAT</div>
+                    <input
+                      type="text"
+                      placeholder="METERED"
+                      value={extractedData.financial.year1.sewerageWater || ''}
+                      onChange={(e) => updateFinancialField('year1', 'sewerageWater', e.target.value)}
+                      className="w-full h-9 px-2 text-sm font-semibold text-gray-900 bg-white border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 mb-1"
+                    />
+                    <div className="relative h-9">
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-600 font-semibold text-[11px] pointer-events-none z-10">R</span>
                       <input
                         type="text"
-                        placeholder="METERED"
-                        value={extractedData.financial.year1.sewerageWater}
-                        onChange={(e) => updateFinancialField('year1', 'sewerageWater', e.target.value)}
-                        className="w-full px-2.5 py-2 text-xs border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all duration-200 hover:border-orange-300 bg-white shadow-sm"
+                        placeholder="515.94"
+                        value={extractedData.financial.year1.refuse || ''}
+                        onChange={(e) => updateFinancialField('year1', 'refuse', e.target.value)}
+                        className="w-full h-9 pl-4 pr-1.5 text-sm font-semibold text-gray-900 bg-white border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400"
                       />
-                      <div className="relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 font-medium text-xs">R</span>
-                        <input
-                          type="text"
-                          placeholder="e.g. 515.94"
-                          value={extractedData.financial.year1.refuse}
-                          onChange={(e) => updateFinancialField('year1', 'refuse', e.target.value)}
-                          className="w-full pl-6 pr-2 py-2 text-xs border-2 border-amber-300 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 transition-all duration-200 hover:border-orange-300 bg-white shadow-sm"
-                        />
-                      </div>
                     </div>
                   </div>
                   
                   {/* Column 5: *RATES AS AT */}
-                  <div className="border-r-2 border-blue-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">
-                      *RATES AS AT<br/>
-                      <input
-                        type="date"
-                        value={extractedData.financial.ratesEffectiveDate}
-                        onChange={(e) => setExtractedData(prev => ({
-                          ...prev,
-                          financial: { ...prev.financial, ratesEffectiveDate: e.target.value }
-                        }))}
-                        className="w-full px-2 py-1 text-[11px] border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-400 mt-1 bg-white shadow-sm"
-                      />
-                      <span className="text-[11px]">EXCL. VAT</span>
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-700 text-center mb-1 leading-tight uppercase">
+                      *RATES AS AT
+                    </div>
+                    <input
+                      type="date"
+                      value={extractedData.financial.ratesEffectiveDate || ''}
+                      onChange={(e) => setExtractedData(prev => ({
+                        ...prev,
+                        financial: { ...prev.financial, ratesEffectiveDate: e.target.value }
+                      }))}
+                      className="w-full px-1 py-0.5 text-[9px] border border-gray-300 rounded mb-1 bg-white"
+                    />
+                    <div className="text-[10px] font-bold text-gray-700 text-center mb-2">EXCL. VAT</div>
+                    <div className="relative h-9">
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-600 font-semibold text-[11px] pointer-events-none z-10">R</span>
                       <input
                         type="text"
-                        placeholder="e.g. 251.29"
-                        value={extractedData.financial.year1.rates}
+                        placeholder="251.29"
+                        value={extractedData.financial.year1.rates || ''}
                         onChange={(e) => updateFinancialField('year1', 'rates', e.target.value)}
-                        className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
+                        className="w-full h-9 pl-4 pr-1.5 text-sm font-semibold text-gray-900 bg-white border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                   </div>
                   
                   {/* Column 6: FROM */}
-                  <div className="border-r-2 border-blue-200 pr-2">
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">FROM</label>
+                  <div>
+                    <div className="text-[10px] font-bold text-gray-700 text-center mb-2 uppercase min-h-[32px] flex items-center justify-center">
+                      FROM
+                    </div>
                     <input
                       type="date"
-                      value={extractedData.financial.year1.from}
+                      value={extractedData.financial.year1.from || ''}
                       onChange={(e) => updateFinancialField('year1', 'from', e.target.value)}
-                      className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
+                      className="w-full h-9 px-2 text-xs font-semibold text-gray-900 bg-white border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
                   
                   {/* Column 7: TO */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">TO</label>
+                    <div className="text-[10px] font-bold text-gray-700 text-center mb-2 uppercase min-h-[32px] flex items-center justify-center">
+                      TO
+                    </div>
                     <input
                       type="date"
-                      value={extractedData.financial.year1.to}
+                      value={extractedData.financial.year1.to || ''}
                       onChange={(e) => updateFinancialField('year1', 'to', e.target.value)}
-                      className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-blue-400 bg-white shadow-sm"
+                      className="w-full h-9 px-2 text-xs font-semibold text-gray-900 bg-white border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
                 </div>
@@ -4713,30 +4628,33 @@ Generated by Automated Lease Drafting System
                 const colorScheme = colorSchemes[(yearNum - 2) % colorSchemes.length];
                 
                 return (
-                  <div key={yearNum} className={`mb-6 p-5 bg-gradient-to-br ${colorScheme.bg} rounded-xl shadow-sm border ${colorScheme.border}`}>
-                    <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                      <span className="text-2xl">📅</span>
-                      <span>Year {yearNum} (Auto-escalated {extractedData.financial.escalationRate || '6'}%)</span>
+                  <div key={yearNum} className={`mb-6 p-4 bg-gradient-to-br ${colorScheme.bg} rounded-xl shadow-sm border ${colorScheme.border}`}>
+                    <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                      <span className="text-xl">📅</span>
+                      <span className="text-base">Year {yearNum} (Auto-escalated {extractedData.financial.escalationRate || '6'}%)</span>
                     </h3>
                   
-                    <div className="grid grid-cols-7 gap-3">
-                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
-                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>EXCL. VAT</label>
-                        <div className="relative">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                    <div className="grid gap-3" style={{gridTemplateColumns: '1.2fr 1.2fr 1.2fr 1fr 1fr', alignItems: 'end'}}>
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-700 text-center mb-2 leading-tight uppercase min-h-[32px] flex items-center justify-center">
+                          BASIC RENT<br/>EXCL. VAT
+                        </div>
+                        <div className="relative h-9">
+                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-600 font-semibold text-[11px] pointer-events-none z-10">R</span>
                           <input
                             type="text"
                             value={getEscalatedValue(extractedData.financial.year1.basicRent, yearNum) || ''}
                             readOnly
-                            placeholder="Auto-calculated"
-                            className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
+                            className="w-full h-9 pl-4 pr-1.5 text-sm font-semibold text-gray-700 bg-gray-50 border-2 border-gray-300 rounded"
                           />
                         </div>
                       </div>
-                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
-                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">BASIC RENT<br/>INCL. VAT</label>
-                        <div className="relative">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-700 text-center mb-2 leading-tight uppercase min-h-[32px] flex items-center justify-center">
+                          BASIC RENT<br/>INCL. VAT
+                        </div>
+                        <div className="relative h-9">
+                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-600 font-semibold text-[11px] pointer-events-none z-10">R</span>
                           <input
                             type="text"
                             value={(() => {
@@ -4744,85 +4662,44 @@ Generated by Automated Lease Drafting System
                               return rent ? (parseFloat(rent) * 1.15).toFixed(2) : '';
                             })()}
                             readOnly
-                            placeholder="Auto-calculated"
-                            className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
+                            className="w-full h-9 pl-4 pr-1.5 text-sm font-semibold text-gray-700 bg-gray-50 border-2 border-gray-300 rounded"
                           />
                         </div>
                       </div>
-                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
-                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">SECURITY<br/>EXCL. VAT</label>
-                        <div className="relative">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-700 text-center mb-2 leading-tight uppercase min-h-[32px] flex items-center justify-center">
+                          SECURITY<br/>EXCL. VAT
+                        </div>
+                        <div className="relative h-9">
+                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-600 font-semibold text-[11px] pointer-events-none z-10">R</span>
                           <input
                             type="text"
                             value={getEscalatedValue(extractedData.financial.year1.security, yearNum) || ''}
                             readOnly
-                            placeholder="Auto-calculated"
-                            className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
+                            className="w-full h-9 pl-4 pr-1.5 text-sm font-semibold text-gray-700 bg-gray-50 border-2 border-gray-300 rounded"
                           />
                         </div>
                       </div>
-                      <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-2.5 rounded-lg border-2 border-amber-200 shadow-md">
-                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center leading-tight uppercase tracking-wide">
-                          ELECTRICITY<br/>SEWERAGE & WATER<br/>
-                          <span className="text-[11px] text-orange-700 font-semibold">*REFUSE AS AT</span><br/>
-                          <input
-                            type="date"
-                            value={extractedData.financial.ratesEffectiveDate}
-                            readOnly
-                            className="w-full px-2 py-1 text-[11px] border-2 border-amber-300 rounded mt-1 bg-gradient-to-br from-gray-50 to-gray-100 shadow-sm"
-                          />
-                          <span className="text-[11px] text-orange-700 font-semibold">EXCL. VAT</span>
-                        </label>
-                        <div className="space-y-1.5">
-                          <input
-                            type="text"
-                            placeholder="METERED"
-                            value={yearData.sewerageWater || extractedData.financial.year1.sewerageWater || 'METERED'}
-                            readOnly
-                            className="w-full px-2.5 py-2 text-xs border-2 border-amber-300 rounded bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
-                          />
-                          <div className="relative">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 font-medium text-xs">R</span>
-                            <input
-                              type="text"
-                              placeholder="Auto-calculated"
-                              value={getEscalatedValue(extractedData.financial.year1.refuse, yearNum) || ''}
-                              readOnly
-                              className="w-full pl-6 pr-2 py-2 text-xs border-2 border-amber-300 rounded bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
-                            />
-                          </div>
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-700 text-center mb-2 uppercase min-h-[32px] flex items-center justify-center">
+                          FROM
                         </div>
-                      </div>
-                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
-                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">RATES<br/>EXCL. VAT</label>
-                        <div className="relative">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">R</span>
-                          <input
-                            type="text"
-                            placeholder="Auto-calculated"
-                            value={getEscalatedValue(extractedData.financial.year1.rates, yearNum) || ''}
-                            readOnly
-                            className="w-full pl-7 pr-2 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm font-semibold"
-                          />
-                        </div>
-                      </div>
-                      <div className={`border-r-2 ${colorScheme.accent} pr-2`}>
-                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">FROM</label>
                         <input
                           type="date"
                           value={yearData.from}
-                          readOnly
-                          className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
+                          onChange={(e) => updateFinancialField(yearKey, 'from', e.target.value)}
+                          className="w-full h-9 px-2 text-xs font-semibold text-gray-900 bg-white border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-gray-800 mb-2 text-center uppercase tracking-wide">TO</label>
+                        <div className="text-[10px] font-bold text-gray-700 text-center mb-2 uppercase min-h-[32px] flex items-center justify-center">
+                          TO
+                        </div>
                         <input
                           type="date"
                           value={yearData.to}
-                          readOnly
-                          className="w-full px-3 py-2.5 text-sm border-2 border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 text-gray-700 shadow-sm"
+                          onChange={(e) => updateFinancialField(yearKey, 'to', e.target.value)}
+                          className="w-full h-9 px-2 text-xs font-semibold text-gray-900 bg-white border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                       </div>
                     </div>
@@ -4839,27 +4716,57 @@ Generated by Automated Lease Drafting System
 
               {/* 1.13-1.17 Sections matching PDF */}
               <div className="mt-6 space-y-3">
-                <div className="grid grid-cols-2 gap-4 items-center p-3 bg-gray-50 rounded-lg border-l-4 border-blue-500">
-                  <label className="text-sm font-bold text-gray-900">1.13 DEPOSIT</label>
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600 font-medium">R</span>
-                      <input
-                        type="text"
-                        placeholder="e.g. 39710.00"
-                        value={extractedData.financial.deposit}
-                        onChange={(e) => updateField('financial', 'deposit', e.target.value)}
-                        className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
+                <div className="p-4 bg-white rounded-lg border-2 border-blue-200 shadow-sm">
+                  <label className="text-sm font-bold text-gray-900 block mb-3">1.13 DEPOSIT</label>
+                  <div className="flex items-start gap-3">
+                    {/* Deposit Amount Input */}
+                    <div className="flex-shrink-0">
+                      <div className="relative w-48">
+                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600 font-medium text-sm">R</span>
+                        <input
+                          type="text"
+                          placeholder="N/A"
+                          value={extractedData.financial?.deposit || ''}
+                          onChange={(e) => updateField('financial', 'deposit', e.target.value)}
+                          className="w-full pl-8 pr-4 py-2.5 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-medium transition-all"
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 ml-1">Auto-filled from Lease Control or enter manually</p>
                     </div>
-                    <select
-                      value={extractedData.financial.depositType || 'held'}
-                      onChange={(e) => updateField('financial', 'depositType', e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-medium bg-white"
-                    >
-                      <option value="held">– DEPOSIT HELD.</option>
-                      <option value="payable">– DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.</option>
-                    </select>
+                    
+                    {/* Deposit Type Dropdown (conditional) */}
+                    <div className="flex-1">
+                      {(() => {
+                        const deposit = extractedData.financial?.deposit;
+                        // Show dropdown if user has entered ANY value (even if not complete)
+                        const hasDeposit = deposit && deposit.trim() !== '';
+                        
+                        if (!hasDeposit) {
+                          return (
+                            <div className="h-full">
+                              <div className="flex items-center h-10 px-4 py-2.5 border-2 border-gray-200 rounded-lg text-sm font-medium bg-gray-50 text-gray-400 italic">
+                                <span>No deposit - Status: N/A</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-1 ml-1">Enter deposit amount to select status</p>
+                            </div>
+                          );
+                        }
+                        
+                        return (
+                          <div className="h-full">
+                            <select
+                              value={extractedData.financial?.depositType || 'held'}
+                              onChange={(e) => updateField('financial', 'depositType', e.target.value)}
+                              className="w-full px-4 py-2.5 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium bg-white hover:border-blue-400 transition-all cursor-pointer"
+                            >
+                              <option value="held">– DEPOSIT HELD.</option>
+                              <option value="payable">– DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.</option>
+                            </select>
+                            <p className="text-xs text-green-600 mt-1 ml-1">✓ Select deposit status</p>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
 

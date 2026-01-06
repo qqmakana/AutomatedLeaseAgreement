@@ -43,7 +43,7 @@ async function generateLeasePDF(leaseData) {
     
     const pdfBuffer = await page.pdf({
       format: 'A4',
-      margin: { top: '0', right: '0', bottom: '0', left: '0' }, // Use CSS @page margins instead
+      margin: { top: '0', right: '0', bottom: '0', left: '0' },
       printBackground: true,
       preferCSSPageSize: true,
       scale: 1
@@ -149,14 +149,21 @@ function generateLeaseHTML(data) {
     font-size: 9pt;
     line-height: 1.15;
     color: #000;
+    text-transform: uppercase;
+  }
+
+  /* Force uppercase everywhere */
+  body, table, td, th, p, div, span {
+    text-transform: uppercase !important;
   }
   
   /* Lock content to exact usable width */
   .page {
+    position: relative;
     width: 204mm;       /* EXTREME MAXIMUM width - 0.25cm equal margins on both sides */
     margin: 0 auto;     /* center at 105mm - vertical center line stays perfectly centered */
     box-sizing: border-box;
-    padding: 0;         /* avoid double spacing at breaks */
+    padding: 0;
     min-height: auto;
   }
   
@@ -195,7 +202,6 @@ function generateLeaseHTML(data) {
     line-height: 1.4;
     margin: 0 0 10px 0;
     padding-left: 50px; /* About 7-8 character spaces from edge */
-    text-transform: none;
     text-indent: 0;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -297,11 +303,10 @@ function generateLeaseHTML(data) {
     margin: 6px 0;
   }
   
-  .footer {
-    text-align: right;
-    font-weight: bold;
-    margin: 25pt 0 0 0;
-    font-size: 9pt;
+  /* Footer handled by Puppeteer header/footer templates */
+  
+  .footer .page-number::after {
+    content: counter(page);
   }
   
   /* CRITICAL: Zero-height page break */
@@ -336,19 +341,19 @@ function generateLeaseHTML(data) {
     </colgroup>
     <tr>
       <td class="label"><b>1.1 THE LANDLORD:</b></td>
-      <td><b>${landlord.name || ''}</b></td>
+      <td><b>${(landlord.name || '').toUpperCase()}<br>0861 999 118</b></td>
     </tr>
     <tr>
       <td>REGISTRATION NO:</td>
-      <td>${landlord.regNo || ''}</td>
+      <td>${(landlord.regNo || '').toUpperCase()}</td>
     </tr>
     <tr>
       <td>VAT REGISTRATION NO:</td>
-      <td>${landlord.vatNo || ''}</td>
+      <td>${(landlord.vatNo || 'TBA').toUpperCase()}</td>
     </tr>
     <tr>
       <td>BANKING DETAILS:</td>
-      <td>BANK: ${landlord.bank || ''}, ${landlord.branch || ''}<br>A/C NO: ${landlord.accountNo || ''}, BRANCH CODE: ${landlord.branchCode || ''}</td>
+      <td>BANK: ${(landlord.bank || '').toUpperCase()}, ${(landlord.branch || '').toUpperCase()}<br>A/C NO: ${(landlord.accountNo || '').toUpperCase()}, BRANCH CODE: ${(landlord.branchCode || '').toUpperCase()}</td>
     </tr>
   </table>
   
@@ -500,7 +505,13 @@ function generateLeaseHTML(data) {
     </tr>
   </table>
   
-  <div class="footer">1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INITIAL HERE: _______</div>
+  <!-- Page 1 footer - page number left, INITIAL HERE: positioned at ~65% from left -->
+  <table style="width: 100%; border: none; margin-top: 25px; font-family: Calibri, sans-serif; font-size: 11pt;">
+    <tr>
+      <td style="border: none; text-align: left; padding: 0; font-weight: normal; width: 65%;">1</td>
+      <td style="border: none; text-align: left; padding: 0; font-weight: bold; width: 35%;">INITIAL HERE:</td>
+    </tr>
+  </table>
 </div>
 
 <!-- Page break -->
@@ -592,7 +603,7 @@ function generateLeaseHTML(data) {
     </colgroup>
     <tr>
       <td class="label"><b>1.13 DEPOSIT -</b></td>
-      <td><b>${formatMoney(financial.deposit)} – ${financial.depositType === 'payable' ? 'DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.' : 'DEPOSIT HELD.'}</b></td>
+      <td><b>${financial.deposit ? `${formatMoney(financial.deposit)} – ${financial.depositType === 'payable' ? 'DEPOSIT PAYABLE UPON SIGNATURE OF LEASE.' : 'DEPOSIT HELD.'}` : 'N/A'}</b></td>
     </tr>
     <tr>
       <td class="label"><b>1.14.1</b> TURNOVER PERCENTAGE</td>
@@ -643,7 +654,13 @@ function generateLeaseHTML(data) {
     </tr>
   </table>
   
-  <div class="footer">2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INITIAL HERE: _______</div>
+  <!-- Page 2 footer - page number left, INITIAL HERE: positioned at ~65% from left -->
+  <table style="width: 100%; border: none; margin-top: 50px; font-family: Calibri, sans-serif; font-size: 11pt;">
+    <tr>
+      <td style="border: none; text-align: left; padding: 0; font-weight: normal; width: 65%;">2</td>
+      <td style="border: none; text-align: left; padding: 0; font-weight: bold; width: 35%;">INITIAL HERE:</td>
+    </tr>
+  </table>
 </div>
 
 </body>

@@ -392,6 +392,13 @@ function extractTenantFromInvoice(text) {
     console.log('👤 Tenant Reg No:', tenant.regNo);
   }
 
+  // Prefer explicit "Tenant / Debtor" line for tenant name (covers non-(Pty) Ltd like ABSA Bank Limited)
+  const debtorMatch = text.match(/Tenant\s*\/\s*Debtor\s+([^\n]+)/i);
+  if (debtorMatch) {
+    tenant.name = debtorMatch[1].trim();
+    console.log('👤 Tenant Name (Tenant/Debtor):', tenant.name);
+  }
+
   // Look for Recipient VAT No - pdf-parse puts values in unusual places
   // The pattern in this PDF is:
   // 2016/348963/07 (Entity Reg)
@@ -442,23 +449,23 @@ function extractTenantFromInvoice(text) {
     }
   }
 
-  // Look for tenant name - company with (Pty) Ltd
-  // First, find all (Pty) Ltd companies and take the one that's NOT the landlord
-  const companyPattern = /([A-Za-z][\w\s\-\.&']+?)\s*\(Pty\)\s*Ltd/gi;
+  // Look for tenant name - company with (Pty) Ltd or Limited/Ltd
+  const companyPattern = /([A-Za-z][\w\s\-\.&']+?\s+(?:\(Pty\)\s*Ltd|Limited|Ltd))/gi;
+  const isLikelyLandlord = (name) => {
+    const lower = name.toLowerCase();
+    return lower.includes('stand 278') || lower.includes('exceedprops') || lower.includes('entity ');
+  };
   const companies = [];
   let match;
-  while ((match = companyPattern.exec(text)) !== null) {
+  while (!tenant.name && (match = companyPattern.exec(text)) !== null) {
     let name = match[0].trim();
-    // Clean up any prefixes like "Amount Due\n" or "Tenant / Debtor\n"
     name = name.replace(/^.*?\n/, '');
-    // Skip if it's Reflect-All (that's the landlord)
-    if (!name.toLowerCase().includes('reflect')) {
+    if (!name.toLowerCase().includes('reflect') && !isLikelyLandlord(name)) {
       companies.push(name);
     }
   }
   
-  if (companies.length > 0) {
-    // Take the first non-landlord company
+  if (companies.length > 0 && !tenant.name) {
     tenant.name = companies[0];
     console.log('👤 Tenant Name:', tenant.name);
   }

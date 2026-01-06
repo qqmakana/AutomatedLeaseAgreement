@@ -19,6 +19,9 @@ export const toast = {
   warning: (message, duration = 4000) => {
     addToast('warning', message, duration);
   },
+  warn: (message, duration = 4000) => {
+    addToast('warning', message, duration);
+  },
   info: (message, duration = 4000) => {
     addToast('info', message, duration);
   }
