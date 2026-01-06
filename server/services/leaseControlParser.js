@@ -463,21 +463,21 @@ function extractSuretyData(text) {
       .trim();
   };
 
-  // FIRST: Look for full name pattern like "Earle Marks" near Director/Capacity
+  // FIRST: Look for full name pattern like "Allan Marks" near Director/Capacity
   console.log('🔎 Looking for full name near Director/Capacity...');
   
-  // Pattern 1: Name followed by Director or Capacity (e.g., "Earle MarksDirector" or "Earle Marks\nCapacity")
-  const nameDirectorMatch = text.match(/([A-Z][a-z]+\s+[A-Z][a-z]+)(?:\s*Director|\s*Capacity|\s*Member)/i);
+  // Pattern 1: Name followed by Director or Capacity (handles "Allan MarksDirector" without space)
+  const nameDirectorMatch = text.match(/([A-Z][a-z]+\s+[A-Z][a-z]+)(?:Director|Capacity|Member)/i);
   if (nameDirectorMatch && nameDirectorMatch[1]) {
-    surety.name = nameDirectorMatch[1].trim();
+    surety.name = cleanSuretyName(nameDirectorMatch[1]);
     console.log('👤 Surety name from Director/Capacity pattern:', surety.name);
   }
   
-  // Pattern 2: Look for "FirstName LastName" that appears multiple times (likely the representative)
+  // Pattern 2: Look for "FirstName LastName" that appears before context words
   if (!surety.name) {
     const fullNameMatch = text.match(/([A-Z][a-z]+\s+[A-Z][a-z]+)(?=\s*Reflect|\s*General|\s*Director|\s*Capacity)/i);
     if (fullNameMatch && fullNameMatch[1]) {
-      surety.name = fullNameMatch[1].trim();
+      surety.name = cleanSuretyName(fullNameMatch[1]);
       console.log('👤 Surety name from context pattern:', surety.name);
     }
   }
